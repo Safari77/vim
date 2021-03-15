@@ -10,6 +10,8 @@ src/objects/.dirstamp
 src/objects
 src/tags
 src/types.vim
+src/ID
+src/link.cmd
 
 # We do need src/auto/configure.
 src/auto/config.cache
