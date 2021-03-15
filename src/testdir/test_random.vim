@@ -11,8 +11,8 @@ func Test_Rand()
 
   call test_settime(12341234)
   let s = srand()
-  if !has('win32') && filereadable('/dev/urandom')
-    " using /dev/urandom
+  if !has('win32')
+    " using getrandom()
     call assert_notequal(s, srand())
   else
     " using time()

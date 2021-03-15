@@ -7139,7 +7139,7 @@ f_test_srand_seed(typval_T *argvars, typval_T *rettv UNUSED)
 init_srand(UINT32_T *x)
 {
 #ifndef MSWIN
-    static int dev_urandom_state = NOTDONE;  // FAIL or OK once tried
+    static int getrandom_state = NOTDONE;  // FAIL or OK once tried
 #endif
 
     if (srand_seed_for_testing_is_used)
@@ -7148,13 +7148,13 @@ init_srand(UINT32_T *x)
 	return;
     }
 #ifndef MSWIN
-    if (dev_urandom_state != FAIL)
+    if (getrandom_state != FAIL)
     {
 	os_getrandom(x, sizeof(UINT32_T));
-	dev_urandom_state = OK;
+	getrandom_state = OK;
     }
-    if (dev_urandom_state != OK)
-	// Reading /dev/urandom doesn't work, fall back to time().
+    if (getrandom_state != OK)
+	// getrandom doesn't work, fall back to time().
 #endif
 	*x = vim_time();
 }
