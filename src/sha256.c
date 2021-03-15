@@ -20,6 +20,8 @@
  *  sha256_self_test() is implicitly called once.
  */
 
+#define _GNU_SOURCE
+
 #include "vim.h"
 
 #if defined(FEAT_CRYPT) || defined(FEAT_PERSISTENT_UNDO)
@@ -376,20 +378,6 @@ sha256_self_test(void)
     return failures > 0 ? FAIL : OK;
 }
 
-    static unsigned int
-get_some_time(void)
-{
-# ifdef HAVE_GETTIMEOFDAY
-    struct timeval tv;
-
-    // Using usec makes it less predictable.
-    gettimeofday(&tv, NULL);
-    return (unsigned int)(tv.tv_sec + tv.tv_usec);
-# else
-    return (unsigned int)time(NULL);
-# endif
-}
-
 /*
  * Fill "header[header_len]" with random_data.
  * Also "salt[salt_len]" when "salt" is not NULL.
@@ -401,27 +389,8 @@ sha2_seed(
     char_u *salt,
     int    salt_len)
 {
-    int		     i;
-    static char_u    random_data[1000];
-    char_u	     sha256sum[32];
-    context_sha256_T ctx;
-
-    srand(get_some_time());
-
-    for (i = 0; i < (int)sizeof(random_data) - 1; i++)
-	random_data[i] = (char_u)((get_some_time() ^ rand()) & 0xff);
-    sha256_start(&ctx);
-    sha256_update(&ctx, (char_u *)random_data, sizeof(random_data));
-    sha256_finish(&ctx, sha256sum);
-
-    // put first block into header.
-    for (i = 0; i < header_len; i++)
-	header[i] = sha256sum[i % sizeof(sha256sum)];
-
-    // put remaining block into salt.
-    if (salt != NULL)
-	for (i = 0; i < salt_len; i++)
-	    salt[i] = sha256sum[(i + header_len) % sizeof(sha256sum)];
+    os_getrandom(header, header_len);
+    if (salt) os_getrandom(salt, salt_len);
 }
 
 #endif // FEAT_CRYPT

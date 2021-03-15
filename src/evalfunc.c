@@ -7150,30 +7150,8 @@ init_srand(UINT32_T *x)
 #ifndef MSWIN
     if (dev_urandom_state != FAIL)
     {
-	int  fd = open("/dev/urandom", O_RDONLY);
-	struct {
-	    union {
-		UINT32_T number;
-		char     bytes[sizeof(UINT32_T)];
-	    } contents;
-	} buf;
-
-	// Attempt reading /dev/urandom.
-	if (fd == -1)
-	    dev_urandom_state = FAIL;
-	else
-	{
-	    buf.contents.number = 0;
-	    if (read(fd, buf.contents.bytes, sizeof(UINT32_T))
-							   != sizeof(UINT32_T))
-		dev_urandom_state = FAIL;
-	    else
-	    {
-		dev_urandom_state = OK;
-		*x = buf.contents.number;
-	    }
-	    close(fd);
-	}
+	os_getrandom(x, sizeof(UINT32_T));
+	dev_urandom_state = OK;
     }
     if (dev_urandom_state != OK)
 	// Reading /dev/urandom doesn't work, fall back to time().
