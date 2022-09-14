@@ -9,6 +9,11 @@
 #ifndef VIM__H
 # define VIM__H
 
+/* O_TMPFILE */
+#if defined(__linux__) && !defined(_GNU_SOURCE)
+#  define _GNU_SOURCE
+#endif
+
 #include "protodef.h"
 
 // _WIN32 is defined as 1 when the compilation target is 32-bit or 64-bit.
@@ -1814,6 +1819,8 @@ typedef void	    *vim_acl_T;		// dummy to pass an ACL to a function
 # define vim_read(fd, buf, count)   read((fd), (char *)(buf), (size_t) (count))
 # define vim_write(fd, buf, count)  write((fd), (char *)(buf), (size_t) (count))
 #endif
+
+void mch_copy_sec(char_u*, char_u*);
 
 /*
  * Enums need a typecast to be used as array index (for Ultrix).

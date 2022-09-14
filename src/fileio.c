@@ -3699,23 +3699,21 @@ vim_fgets(char_u *buf, int size, FILE *fp)
  * function will (attempts to?) copy the file across if rename fails -- webb
  * Return -1 for failure, 0 for success.
  */
-    int
-vim_rename(char_u *from, char_u *to)
+static int
+vim_rename_copy(char_u *from, char_u *to, int which)
 {
     int		fd_in;
     int		fd_out;
     int		n;
     char	*errmsg = NULL;
     char	*buffer;
-#ifdef AMIGA
-    BPTR	flock;
-#endif
     stat_T	st;
     long	perm;
 #ifdef HAVE_ACL
     vim_acl_T	acl;		// ACL from original file
 #endif
-    int		use_tmp_file = FALSE;
+    char_u *totemp;
+    size_t totemplen;
 
     /*
      * When the names are identical, there is nothing to do.  When they refer
@@ -3724,9 +3722,6 @@ vim_rename(char_u *from, char_u *to)
      */
     if (fnamecmp(from, to) == 0)
     {
-	if (p_fic && STRCMP(gettail(from), gettail(to)) != 0)
-	    use_tmp_file = TRUE;
-	else
 	    return 0;
     }
 
@@ -3736,106 +3731,35 @@ vim_rename(char_u *from, char_u *to)
     if (mch_stat((char *)from, &st) < 0)
 	return -1;
 
-#ifdef UNIX
-    {
-	stat_T	st_to;
-
-	// It's possible for the source and destination to be the same file.
-	// This happens when "from" and "to" differ in case and are on a FAT32
-	// filesystem.  In that case go through a temp file name.
-	if (mch_stat((char *)to, &st_to) >= 0
-		&& st.st_dev == st_to.st_dev
-		&& st.st_ino == st_to.st_ino)
-	    use_tmp_file = TRUE;
+    if (which == 0) {
+	if (mch_rename((char *)from, (char *)to) == 0)
+	    return 0;
+    } else {
+	mch_remove(to);
+	if (link(from, to) == 0)
+	    return 1;
     }
-#endif
-#ifdef MSWIN
-    {
-	BY_HANDLE_FILE_INFORMATION info1, info2;
+    totemplen = strlen(to) + 13;
+    totemp = alloc(totemplen);
+    if (totemp == NULL)
+	return -1;
 
-	// It's possible for the source and destination to be the same file.
-	// In that case go through a temp file name.  This makes rename("foo",
-	// "./foo") a no-op (in a complicated way).
-	if (win32_fileinfo(from, &info1) == FILEINFO_OK
-		&& win32_fileinfo(to, &info2) == FILEINFO_OK
-		&& info1.dwVolumeSerialNumber == info2.dwVolumeSerialNumber
-		&& info1.nFileIndexHigh == info2.nFileIndexHigh
-		&& info1.nFileIndexLow == info2.nFileIndexLow)
-	    use_tmp_file = TRUE;
-    }
-#endif
-
-    if (use_tmp_file)
-    {
-	char	tempname[MAXPATHL + 1];
-
-	/*
-	 * Find a name that doesn't exist and is in the same directory.
-	 * Rename "from" to "tempname" and then rename "tempname" to "to".
-	 */
-	if (STRLEN(from) >= MAXPATHL - 5)
-	    return -1;
-	STRCPY(tempname, from);
-	for (n = 123; n < 99999; ++n)
-	{
-	    sprintf((char *)gettail((char_u *)tempname), "%d", n);
-	    if (mch_stat(tempname, &st) < 0)
-	    {
-		if (mch_rename((char *)from, tempname) == 0)
-		{
-		    if (mch_rename(tempname, (char *)to) == 0)
-			return 0;
-		    // Strange, the second step failed.  Try moving the
-		    // file back and return failure.
-		    (void)mch_rename(tempname, (char *)from);
-		    return -1;
-		}
-		// If it fails for one temp name it will most likely fail
-		// for any temp name, give up.
-		return -1;
-	    }
-	}
+    snprintf(totemp, totemplen, "%s.tmp.XXXXXX", to);
+    fd_in = mch_open((char *)from, O_RDONLY|O_EXTRA, 0);
+    if (fd_in == -1) {
+	vim_free(totemp);
 	return -1;
     }
 
     /*
-     * Delete the "to" file, this is required on some systems to make the
-     * mch_rename() work, on other systems it makes sure that we don't have
-     * two files when the mch_rename() fails.
-     */
-
-#ifdef AMIGA
-    /*
-     * With MSDOS-compatible filesystems (crossdos, messydos) it is possible
-     * that the name of the "to" file is the same as the "from" file, even
-     * though the names are different. To avoid the chance of accidentally
-     * deleting the "from" file (horror!) we lock it during the remove.
-     *
-     * When used for making a backup before writing the file: This should not
-     * happen with ":w", because startscript() should detect this problem and
-     * set buf->b_shortname, causing modname() to return a correct ".bak" file
-     * name.  This problem does exist with ":w filename", but then the
-     * original file will be somewhere else so the backup isn't really
-     * important. If autoscripting is off the rename may fail.
-     */
-    flock = Lock((UBYTE *)from, (long)ACCESS_READ);
-#endif
-    mch_remove(to);
-#ifdef AMIGA
-    if (flock)
-	UnLock(flock);
-#endif
-
-    /*
-     * First try a normal rename, return if it works.
-     */
-    if (mch_rename((char *)from, (char *)to) == 0)
-	return 0;
-
-    /*
-     * Rename() failed, try copying the file.
+     * Try copying the file
      */
     perm = mch_getperm(from);
+    if (perm == -1) {
+	vim_free(totemp);
+	close(fd_in);
+	return -1;
+    }
 #ifdef HAVE_ACL
     // For systems that support ACL: get the ACL from the original file.
     acl = mch_get_acl(from);
@@ -3846,20 +3770,22 @@ vim_rename(char_u *from, char_u *to)
 #ifdef HAVE_ACL
 	mch_free_acl(acl);
 #endif
+	vim_free(totemp);
 	return -1;
     }
 
-    // Create the new file with same permissions as the original.
-    fd_out = mch_open((char *)to,
-		       O_CREAT|O_EXCL|O_WRONLY|O_EXTRA|O_NOFOLLOW, (int)perm);
+    /* Create the new file with same permissions as the original. */
+    fd_out = mkstemp(totemp);
     if (fd_out == -1)
     {
 	close(fd_in);
 #ifdef HAVE_ACL
 	mch_free_acl(acl);
 #endif
+	vim_free(totemp);
 	return -1;
     }
+    fchmod(fd_out, perm);
 
     buffer = alloc(WRITEBUFSIZE);
     if (buffer == NULL)
@@ -3881,31 +3807,72 @@ vim_rename(char_u *from, char_u *to)
 
     vim_free(buffer);
     close(fd_in);
-    if (close(fd_out) < 0)
-	errmsg = _(e_error_closing_str);
     if (n < 0)
     {
 	errmsg = _(e_error_reading_str);
 	to = from;
     }
 #ifndef UNIX	    // for Unix mch_open() already set the permission
-    mch_setperm(to, perm);
+    mch_setperm(totemp, perm);
 #endif
 #ifdef HAVE_ACL
-    mch_set_acl(to, acl);
+    mch_set_acl(totemp, acl);
     mch_free_acl(acl);
 #endif
 #if defined(HAVE_SELINUX) || defined(HAVE_SMACK)
-    mch_copy_sec(from, to);
+    mch_copy_sec(from, totemp);
 #endif
+    if (fsync(fd_out) != 0)
+    {
+	errmsg = _("E999: Error fsyncing \"%s\"");
+	close(fd_out);
+    } else {
+	if (close(fd_out) < 0)
+	    errmsg = _(e_error_closing_str);
+    }
+
+    if (mch_rename(totemp, to) == -1) {
+	errmsg = _("E999: Error renaming \"%s\"");
+	mch_remove(totemp);
+    }
+    vim_free(totemp);
+
+    if (errmsg == NULL && which == 0) {
+	if (mch_remove(from) == -1)
+	    errmsg = _("E999: Error removing \"%s\"");
+    }
+
     if (errmsg != NULL)
     {
 	semsg(errmsg, to);
 	return -1;
     }
-    mch_remove(from);
     return 0;
 }
+
+/*
+ * rename() only works if both files are on the same file system, this
+ * function will (attempts to?) copy the file across if rename fails -- webb
+ * Return -1 for failure, 0 for success, or 1 for success,
+ * if which==1 and 'from' was link(2)ed to 'to'.
+ *
+ */
+    int
+vim_rename(from, to)
+    char_u     *from;
+    char_u     *to;
+{
+    return vim_rename_copy(from, to, 0);
+}
+
+    int
+vim_copy(from, to)
+    char_u     *from;
+    char_u     *to;
+{
+    return vim_rename_copy(from, to, 1);
+}
+
 
 static int already_warned = FALSE;
 

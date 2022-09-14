@@ -19,6 +19,8 @@
 
 #define SMALLBUFSIZE	256	// size of emergency write buffer
 
+extern int vim_copy(char_u *from, char_u *to);
+
 /*
  * Structure to pass arguments from buf_write() to buf_write_bytes().
  */
@@ -641,8 +643,12 @@ buf_write(
     char_u	    *backup = NULL;
     int		    backup_copy = FALSE; // copy the original file?
     int		    dobackup;
+    int		    can_write_dir = 0;  /* Can create file on dir where 'fname' resides */
+    int		    backup_linked = 0;  /* Backup file is link(2)'ed to 'fname' */
     char_u	    *ffname;
     char_u	    *wfname = NULL;	// name of file to write to
+    char_u	    *wfname_orig = NULL; /* Kill me */
+    char_u	    wftmp[MAXPATHL+1];
     char_u	    *s;
     char_u	    *ptr;
     char_u	    c;
@@ -685,6 +691,11 @@ buf_write(
 #ifdef HAVE_ACL
     vim_acl_T	    acl = NULL;		// ACL copied from original file to
 					// backup or new file
+    int		    ret;
+#if defined(UNIX) || defined(WIN32)
+    struct stat     st;
+#endif
+
 #endif
 #ifdef FEAT_PERSISTENT_UNDO
     int		    write_undo_file = FALSE;
@@ -1031,10 +1042,17 @@ buf_write(
     st_old.st_dev = 0;
     st_old.st_ino = 0;
     perm = -1;
-    if (mch_stat((char *)fname, &st_old) < 0)
+    if (mch_stat((char *)fname, &st_old) < 0) {
 	newfile = TRUE;
-    else
-    {
+        sprintf(IObuff, "%s", fname);
+        sprintf(gettail(IObuff), "%s", "vimfiletest.XXXXXX");
+        fd = mkstemp(IObuff);
+        if (fd != -1) {
+            can_write_dir = 1;
+            close(fd);
+            mch_remove(IObuff);
+        }
+    } else {
 	perm = st_old.st_mode;
 	if (!S_ISREG(st_old.st_mode))		// not a file
 	{
@@ -1055,6 +1073,33 @@ buf_write(
 	    device = TRUE;
 	    newfile = TRUE;
 	    perm = -1;
+	}
+       /*
+        * Check if we can create a file and set the owner/group to
+        * the ones from the original file.
+        * First find a file name that doesn't exist yet.
+        */
+	sprintf(IObuff, "%s", fname);
+	sprintf(gettail(IObuff), "%s", "vimfiletest.XXXXXX");
+	fd = mkstemp(IObuff);
+	if (fd != -1) {
+#ifdef UNIX
+# ifdef HAVE_FCHOWN
+	    fchown(fd, st_old.st_uid, st_old.st_gid);
+	    fchmod(fd, perm);
+# endif
+	    if (mch_stat((char *)IObuff, &st) == 0
+		&& st.st_uid == st_old.st_uid
+		&& st.st_gid == st_old.st_gid
+		&& st.st_mode == perm)
+		can_write_dir = 1;
+# else
+	    can_write_dir = 1;
+# endif
+	    /* Close the file before removing it, on MS-Windows we
+	     * can't delete an open file. */
+	    close(fd);
+	    mch_remove(IObuff);
 	}
     }
 #else // !UNIX
@@ -1156,17 +1201,11 @@ buf_write(
     // off.  This helps when editing large files on almost-full disks.
     if (!(append && *p_pm == NUL) && !filtering && perm >= 0 && dobackup)
     {
-#if defined(UNIX) || defined(MSWIN)
-	stat_T	    st;
-#endif
-
 	if ((bkc & BKC_YES) || append)	// "yes"
 	    backup_copy = TRUE;
 #if defined(UNIX) || defined(MSWIN)
 	else if ((bkc & BKC_AUTO))	// "auto"
 	{
-	    int		i;
-
 # ifdef UNIX
 	    // Don't rename the file when:
 	    // - it's a hard link
@@ -1192,64 +1231,8 @@ buf_write(
 	    else
 #  endif
 # endif
-	    {
-		// Check if we can create a file and set the owner/group to
-		// the ones from the original file.
-		// First find a file name that doesn't exist yet (use some
-		// arbitrary numbers).
-		STRCPY(IObuff, fname);
-		fd = -1;
-		for (i = 4913; ; i += 123)
-		{
-		    sprintf((char *)gettail(IObuff), "%d", i);
-		    if (mch_lstat((char *)IObuff, &st) < 0)
-		    {
-			fd = mch_open((char *)IObuff,
-				    O_CREAT|O_WRONLY|O_EXCL|O_NOFOLLOW, perm);
-			if (fd < 0 && errno == EEXIST)
-			    // If the same file name is created by another
-			    // process between lstat() and open(), find another
-			    // name.
-			    continue;
-			break;
-		    }
-		}
-		if (fd < 0)	// can't write in directory
-		    backup_copy = TRUE;
-		else
-		{
-# ifdef UNIX
-#  ifdef HAVE_FCHOWN
-		    vim_ignored = fchown(fd, st_old.st_uid, st_old.st_gid);
-#  endif
-		    if (mch_stat((char *)IObuff, &st) < 0
-			    || st.st_uid != st_old.st_uid
-			    || st.st_gid != st_old.st_gid
-			    || (long)st.st_mode != perm)
-			backup_copy = TRUE;
-# endif
-		    // Close the file before removing it, on MS-Windows we
-		    // can't delete an open file.
-		    close(fd);
-		    mch_remove(IObuff);
-# ifdef MSWIN
-		    // MS-Windows may trigger a virus scanner to open the
-		    // file, we can't delete it then.  Keep trying for half a
-		    // second.
-		    {
-			int try;
-
-			for (try = 0; try < 10; ++try)
-			{
-			    if (mch_lstat((char *)IObuff, &st) < 0)
-				break;
-			    ui_delay(50L, TRUE);  // wait 50 msec
-			    mch_remove(IObuff);
-			}
-		    }
-# endif
-		}
-	    }
+	    if (can_write_dir == 0)
+		backup_copy = TRUE;
 	}
 
 	// Break symlinks and/or hardlinks if we've been asked to.
@@ -1485,6 +1468,8 @@ buf_write(
 			    }
 			}
 
+			if (fsync(bfd) < 0)
+			    errmsg = _("E999: Error fsyncing \"%s\"");
 			if (close(bfd) < 0 && errmsg == NULL)
 			    errmsg = (char_u *)_(e_close_error_for_backup_file_add_bang_to_write_anyway);
 			if (write_info.bw_len < 0)
@@ -1597,8 +1582,13 @@ buf_write(
 
 		    // If the renaming of the original file to the backup file
 		    // works, quit here.
-		    if (vim_rename(fname, backup) == 0)
+		    ret = vim_copy(fname, backup);
+		    if (ret == 0) {
 			break;
+		    } else if (ret == 1) {
+			backup_linked = 1;
+			break;
+		    }
 
 		    VIM_CLEAR(backup);   // don't do the rename below
 		}
@@ -1787,6 +1777,17 @@ buf_write(
 	}
 	else
 	{
+	if ((wfname == fname) && can_write_dir && !append) {
+	    snprintf(wftmp, sizeof(wftmp), "%s.vimtemp-XXXXXX", wfname);
+	    fd = mkstemp(wftmp);
+	    if (fd == -1) {
+		errmsg = (char_u *)_("E212: Can't open file for writing");
+	    }
+	    wfname_orig = wfname;
+	    wfname = wftmp;
+	} else {
+	    if (backup_linked) mch_remove(fname);
+
 #ifdef HAVE_FTRUNCATE
 # define TRUNC_ON_OPEN 0
 #else
@@ -1846,8 +1847,6 @@ buf_write(
 
 restore_backup:
 		{
-		    stat_T	st;
-
 		    // If we failed to open the file, we don't need a backup.
 		    // Throw it away.  If we moved or removed the original file
 		    // try to put the backup in its place.
@@ -1880,9 +1879,12 @@ restore_backup:
 			end = 0;
 		}
 
-		if (wfname != fname)
+		if ((wfname != fname) && (wfname != wftmp)) {
 		    vim_free(wfname);
+		    wfname = NULL;
+		}
 		goto fail;
+	    }
 	    }
 	    write_info.bw_fd = fd;
 
@@ -2256,7 +2258,7 @@ restore_backup:
 #endif
 
 #if defined(FEAT_EVAL)
-	if (wfname != fname)
+	if ((wfname != fname) && (wfname != wftmp))
 	{
 	    // The file was written to a temp file, now it needs to be
 	    // converted with 'charconvert' to (overwrite) the output file.
@@ -2274,6 +2276,9 @@ restore_backup:
 	}
 #endif
     }
+
+    if (wfname_orig && (mch_rename(wftmp, wfname_orig) == -1))
+	    end = 0;
 
     if (end == 0)
     {
@@ -2326,13 +2331,15 @@ restore_backup:
 			write_info.bw_buf = smallbuf;
 			write_info.bw_flags = FIO_NOCONVERT;
 			while ((write_info.bw_len = read_eintr(fd, smallbuf,
-						      SMALLBUFSIZE)) > 0)
+						      SMALLBUFSIZE)) > 0) {
 			    if (buf_write_bytes(&write_info) == FAIL)
 				break;
+			}
 
-			if (close(write_info.bw_fd) >= 0
-						   && write_info.bw_len == 0)
-			    end = 1;		// success
+			if ((fsync(write_info.bw_fd) == 0)
+			    && (close(write_info.bw_fd) >= 0)
+			    && write_info.bw_len == 0)
+				end = 1;		// success
 		    }
 		    close(fd);	// ignore errors for closing read file
 		}
@@ -2446,8 +2453,6 @@ restore_backup:
 
 	if (backup != NULL)
 	{
-	    stat_T	st;
-
 	    // If the original file does not exist yet
 	    // the current backup file becomes the original file
 	    if (org == NULL)
