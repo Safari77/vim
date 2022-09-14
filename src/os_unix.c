@@ -18,6 +18,9 @@
  * changed beyond recognition.
  */
 
+#include <limits.h>
+#include <sys/random.h>
+
 #include "vim.h"
 
 #ifdef FEAT_MZSCHEME
@@ -339,6 +342,31 @@ static struct signalinfo
 #endif
     {-1,	    "Unknown!", FALSE}
 };
+
+void os_getrandom(void *buf, size_t len)
+{
+    ssize_t written;
+    uint8_t *p = buf;
+
+    if (len > INT_MAX) {
+        smsg("os_getrandom: requested %zu bytes\n", len);
+        exit(1);
+    }
+
+   while (len > 0) {
+       do {
+               errno = 0;
+               written = getrandom(p, len, 0);
+       } while ((written == -1) && (errno == EINTR));
+       if (written <= 0) {
+	       smsg("os_getrandom: getrandom failed: %s\n",
+                    strerror(errno));
+               exit(1);
+       }
+       p += written;
+       len -= written;
+   }
+}
 
     int
 mch_chdir(char *path)

@@ -8060,7 +8060,7 @@ f_test_srand_seed(typval_T *argvars, typval_T *rettv UNUSED)
 init_srand(UINT32_T *x)
 {
 #ifndef MSWIN
-    static int dev_urandom_state = NOTDONE;  // FAIL or OK once tried
+    static int getrandom_state = NOTDONE;  // FAIL or OK once tried
 #endif
 
     if (srand_seed_for_testing_is_used)
@@ -8069,35 +8069,13 @@ init_srand(UINT32_T *x)
 	return;
     }
 #ifndef MSWIN
-    if (dev_urandom_state != FAIL)
+    if (getrandom_state != FAIL)
     {
-	int  fd = open("/dev/urandom", O_RDONLY);
-	struct {
-	    union {
-		UINT32_T number;
-		char     bytes[sizeof(UINT32_T)];
-	    } contents;
-	} buf;
-
-	// Attempt reading /dev/urandom.
-	if (fd == -1)
-	    dev_urandom_state = FAIL;
-	else
-	{
-	    buf.contents.number = 0;
-	    if (read(fd, buf.contents.bytes, sizeof(UINT32_T))
-							   != sizeof(UINT32_T))
-		dev_urandom_state = FAIL;
-	    else
-	    {
-		dev_urandom_state = OK;
-		*x = buf.contents.number;
-	    }
-	    close(fd);
-	}
+	os_getrandom(x, sizeof(UINT32_T));
+	getrandom_state = OK;
     }
-    if (dev_urandom_state != OK)
-	// Reading /dev/urandom doesn't work, fall back to time().
+    if (getrandom_state != OK)
+	// getrandom doesn't work, fall back to time().
 #endif
 	*x = vim_time();
 }

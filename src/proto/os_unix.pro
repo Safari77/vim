@@ -1,4 +1,5 @@
 /* os_unix.c */
+void os_getrandom(void*, size_t);
 int mch_chdir(char *path);
 void mch_write(char_u *s, int len);
 int mch_inchar(char_u *buf, int maxlen, long wtime, int tb_change_cnt);
