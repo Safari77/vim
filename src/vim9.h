@@ -122,6 +122,9 @@ typedef enum {
 
     // loop
     ISN_FOR,	    // get next item from a list, uses isn_arg.forloop
+    ISN_WHILE,	    // jump if condition false, store funcref count, uses
+		    // isn_arg.whileloop
+    ISN_ENDLOOP,    // handle variables for closures, uses isn_arg.endloop
 
     ISN_TRY,	    // add entry to ec_trystack, uses isn_arg.tryref
     ISN_THROW,	    // pop value of stack, store in v:exception
@@ -240,6 +243,7 @@ typedef enum {
     JUMP_ALWAYS,
     JUMP_NEVER,
     JUMP_IF_FALSE,		// pop and jump if false
+    JUMP_WHILE_FALSE,		// pop and jump if false for :while
     JUMP_AND_KEEP_IF_TRUE,	// jump if top of stack is truthy, drop if not
     JUMP_IF_COND_TRUE,		// jump if top of stack is true, drop if not
     JUMP_IF_COND_FALSE,		// jump if top of stack is false, drop if not
@@ -262,6 +266,19 @@ typedef struct {
     int	    for_idx;	    // loop variable index
     int	    for_end;	    // position to jump to after done
 } forloop_T;
+
+// arguments to ISN_WHILE
+typedef struct {
+    int	    while_funcref_idx;  // variable index for funcref count
+    int	    while_end;		// position to jump to after done
+} whileloop_T;
+
+// arguments to ISN_ENDLOOP
+typedef struct {
+    short    end_funcref_idx;	// variable index of funcrefs.ga_len
+    short    end_var_idx;	// first variable declared in the loop
+    short    end_var_count;	// number of variables declared in the loop
+} endloop_T;
 
 // indirect arguments to ISN_TRY
 typedef struct {
@@ -337,16 +354,29 @@ typedef struct {
     int		ul_forceit;	// forceit flag
 } unlet_T;
 
+// extra arguments for funcref_T
+typedef struct {
+    char_u	*fre_func_name;	    // function name for legacy function
+    short	fre_loop_var_idx;   // index of first variable inside loop
+    short	fre_loop_var_count; // number of variables inside loop
+} funcref_extra_T;
+
 // arguments to ISN_FUNCREF
 typedef struct {
-    int		fr_dfunc_idx;	// function index for :def function
-    char_u	*fr_func_name;	// function name for legacy function
+    int		    fr_dfunc_idx;   // function index for :def function
+    funcref_extra_T *fr_extra;	    // optional extra information
 } funcref_T;
 
 // arguments to ISN_NEWFUNC
 typedef struct {
-    char_u	*nf_lambda;	// name of the lambda already defined
-    char_u	*nf_global;	// name of the global function to be created
+    char_u	*nfa_lambda;	   // name of the lambda already defined
+    char_u	*nfa_global;	   // name of the global function to be created
+    short	nfa_loop_var_idx;    // index of first variable inside loop
+    short	nfa_loop_var_count;  // number of variables inside loop
+} newfuncarg_T;
+
+typedef struct {
+    newfuncarg_T *nf_arg;
 } newfunc_T;
 
 // arguments to ISN_CHECKLEN
@@ -383,6 +413,8 @@ typedef struct {
     int		outer_idx;	// index
     int		outer_depth;	// nesting level, stack frames to go up
 } isn_outer_T;
+
+#define OUTER_LOOP_DEPTH -9	// used for outer_depth for loop variables
 
 // arguments to ISN_SUBSTITUTE
 typedef struct {
@@ -446,6 +478,8 @@ struct isn_S {
 	jump_T		    jump;
 	jumparg_T	    jumparg;
 	forloop_T	    forloop;
+	whileloop_T	    whileloop;
+	endloop_T	    endloop;
 	try_T		    tryref;
 	trycont_T	    trycont;
 	cbfunc_T	    bfunc;
@@ -597,6 +631,9 @@ typedef struct {
 typedef struct {
     int		ws_top_label;	    // instruction idx at WHILE
     endlabel_T	*ws_end_label;	    // instructions to set end
+    int		ws_funcref_idx;	    // index of var that holds funcref count
+    int		ws_local_count;	    // ctx_locals.ga_len at :while
+    int		ws_closure_count;   // ctx_closure_count at :while
 } whilescope_T;
 
 /*
@@ -605,6 +642,9 @@ typedef struct {
 typedef struct {
     int		fs_top_label;	    // instruction idx at FOR
     endlabel_T	*fs_end_label;	    // break instructions
+    int		fs_funcref_idx;	    // index of var that holds funcref count
+    int		fs_local_count;	    // ctx_locals.ga_len at :for
+    int		fs_closure_count;   // ctx_closure_count at :for
 } forscope_T;
 
 /*
@@ -652,6 +692,7 @@ typedef struct {
     char_u	*lv_name;
     type_T	*lv_type;
     int		lv_idx;		// index of the variable on the stack
+    int		lv_loop_idx;	// index of first variable inside a loop or -1
     int		lv_from_outer;	// nesting level, using ctx_outer scope
     int		lv_const;	// when TRUE cannot be assigned to
     int		lv_arg;		// when TRUE this is an argument
@@ -726,8 +767,10 @@ struct cctx_S {
 
     garray_T	ctx_locals;	    // currently visible local variables
 
-    int		ctx_has_closure;    // set to one if a closure was created in
-				    // the function
+    int		ctx_has_closure;    // set to one if a FUNCREF was used in the
+				    // function
+    int		ctx_closure_count;  // incremented for each closure created in
+				    // the function.
 
     skip_T	ctx_skip;
     scope_T	*ctx_scope;	    // current scope, NULL at toplevel

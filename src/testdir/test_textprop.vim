@@ -2869,6 +2869,11 @@ func Test_props_with_text_above()
   let buf = RunVimInTerminal('-S XscriptPropsWithTextAbove', #{rows: 9, cols: 60})
   call VerifyScreenDump(buf, 'Test_prop_with_text_above_1', {})
 
+  call term_sendkeys(buf, "ggg$")
+  call VerifyScreenDump(buf, 'Test_prop_with_text_above_1a', {})
+  call term_sendkeys(buf, "g0")
+  call VerifyScreenDump(buf, 'Test_prop_with_text_above_1b', {})
+
   call term_sendkeys(buf, "ggI")
   call VerifyScreenDump(buf, 'Test_prop_with_text_above_2', {})
   call term_sendkeys(buf, "inserted \<Esc>")
@@ -2892,6 +2897,45 @@ func Test_props_with_text_above()
   call StopVimInTerminal(buf)
 endfunc
 
+func Test_prop_above_with_indent()
+  new
+  call setline(1, ['first line', '    second line', '    line below'])
+  setlocal cindent
+  call prop_type_add('indented', #{highlight: 'Search'})
+  call prop_add(3, 0, #{type: 'indented', text: 'here', text_align: 'above', text_padding_left: 4})
+  call assert_equal('    line below', getline(3))
+
+  exe "normal 3G2|a\<CR>"
+  call assert_equal('  ', getline(3))
+  call assert_equal('    line below', getline(4))
+
+  bwipe!
+  call prop_type_delete('indented')
+endfunc
+
+func Test_prop_below_split_line()
+  CheckRunVimInTerminal
+
+  let lines =<< trim END
+      vim9script
+      setline(1, ['one one one', 'two two two', 'three three three'])
+      prop_type_add('test', {highlight: 'ModeMsg'})
+      prop_add(2, 0, {
+          text:  '└─ Virtual text below the 2nd line',
+          type: 'test',
+          text_align: 'below',
+          text_padding_left: 3
+      })
+  END
+  call writefile(lines, 'XscriptPropBelowSpitLine', 'D')
+  let buf = RunVimInTerminal('-S XscriptPropBelowSpitLine', #{rows: 8})
+  call term_sendkeys(buf, "2GA\<CR>xx")
+  call VerifyScreenDump(buf, 'Test_prop_below_split_line_1', {})
+
+  call term_sendkeys(buf, "\<Esc>")
+  call StopVimInTerminal(buf)
+endfunc
+
 func Test_props_with_text_override()
   CheckRunVimInTerminal
 
@@ -2904,7 +2948,7 @@ func Test_props_with_text_override()
       hi CursorLine cterm=underline ctermbg=lightgrey
       set cursorline
   END
-  call writefile(lines, 'XscriptPropsOverride')
+  call writefile(lines, 'XscriptPropsOverride', 'D')
   let buf = RunVimInTerminal('-S XscriptPropsOverride', #{rows: 6, cols: 60})
   call VerifyScreenDump(buf, 'Test_prop_with_text_override_1', {})
 
@@ -2913,7 +2957,6 @@ func Test_props_with_text_override()
   call VerifyScreenDump(buf, 'Test_prop_with_text_override_2', {})
 
   call StopVimInTerminal(buf)
-  call delete('XscriptPropsOverride')
 endfunc
 
 func Test_props_with_text_CursorMoved()
@@ -3142,6 +3185,9 @@ func Test_insert_text_with_padding()
 
   call term_sendkeys(buf, "ggix\<Esc>")
   call VerifyScreenDump(buf, 'Test_prop_text_with_padding_3', {})
+
+  call term_sendkeys(buf, ":set list\<CR>")
+  call VerifyScreenDump(buf, 'Test_prop_text_with_padding_4', {})
 
   call StopVimInTerminal(buf)
   call delete('XscriptPropsPadded')
