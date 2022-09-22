@@ -166,6 +166,38 @@ func Test_echospace()
   set ruler& showcmd&
 endfunc
 
+func Test_warning_scroll()
+  CheckRunVimInTerminal
+  let lines =<< trim END
+      call test_override('ui_delay', 50)
+      set noruler
+      set readonly
+      undo
+  END
+  call writefile(lines, 'XTestWarningScroll', 'D')
+  let buf = RunVimInTerminal('', #{rows: 8})
+
+  " When the warning comes from a script, messages are scrolled so that the
+  " stacktrace is visible.
+  call term_sendkeys(buf, ":source XTestWarningScroll\n")
+  " only match the final colon in the line that shows the source
+  call WaitForAssert({-> assert_match(':$', term_getline(buf, 5))})
+  call WaitForAssert({-> assert_equal('line    4:W10: Warning: Changing a readonly file', term_getline(buf, 6))})
+  call WaitForAssert({-> assert_equal('Already at oldest change', term_getline(buf, 7))})
+  call WaitForAssert({-> assert_equal('Press ENTER or type command to continue', term_getline(buf, 8))})
+  call term_sendkeys(buf, "\n")
+
+  " When the warning does not come from a script, messages are not scrolled.
+  call term_sendkeys(buf, ":enew\n")
+  call term_sendkeys(buf, ":set readonly\n")
+  call term_sendkeys(buf, 'u')
+  call WaitForAssert({-> assert_equal('W10: Warning: Changing a readonly file', term_getline(buf, 8))})
+  call WaitForAssert({-> assert_equal('Already at oldest change', term_getline(buf, 8))})
+
+  " clean up
+  call StopVimInTerminal(buf)
+endfunc
+
 " Test more-prompt (see :help more-prompt).
 func Test_message_more()
   CheckRunVimInTerminal
@@ -334,7 +366,8 @@ func Test_quit_long_message()
     echom range(9999)->join("\x01")
   END
   call writefile(content, 'Xtest_quit_message')
-  let buf = RunVimInTerminal('-S Xtest_quit_message', #{rows: 6})
+  let buf = RunVimInTerminal('-S Xtest_quit_message', #{rows: 6, wait_for_ruler: 0})
+  call WaitForAssert({-> assert_match('^-- More --', term_getline(buf, 6))})
   call term_sendkeys(buf, "q")
   call VerifyScreenDump(buf, 'Test_quit_long_message', {})
 

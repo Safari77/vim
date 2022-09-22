@@ -173,11 +173,15 @@ function GetAllocId(name)
   return lnum - top - 1
 endfunc
 
+let g:func_start = reltime()
+
 func RunTheTest(test)
-  echoconsole 'Executing ' . a:test
+  let prefix = ''
   if has('reltime')
-    let func_start = reltime()
+    let prefix = 'took ' .. reltimestr(reltime(g:func_start)) .. '; now '
+    let g:func_start = reltime()
   endif
+  echoconsole prefix .. 'Executing ' .. a:test
 
   " Avoid stopping at the "hit enter" prompt
   set nomore
@@ -226,6 +230,11 @@ func RunTheTest(test)
     endtry
   endif
   au! VimLeavePre
+
+  if a:test =~ '_terminal_'
+    " Terminal tests sometimes hang, give extra information
+    echoconsole 'After executing ' .. a:test
+  endif
 
   " In case 'insertmode' was set and something went wrong, make sure it is
   " reset to avoid trouble with anything else.
@@ -279,10 +288,15 @@ func RunTheTest(test)
 
   exe 'cd ' . save_cwd
 
+  if a:test =~ '_terminal_'
+    " Terminal tests sometimes hang, give extra information
+    echoconsole 'Finished ' . a:test
+  endif
+
   let message = 'Executed ' . a:test
   if has('reltime')
     let message ..= repeat(' ', 50 - len(message))
-    let time = reltime(func_start)
+    let time = reltime(g:func_start)
     if reltimefloat(time) > 0.1
       let message = s:t_bold .. message
     endif
