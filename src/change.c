@@ -709,6 +709,16 @@ changed_bytes(linenr_T lnum, colnr_T col)
     changedOneline(curbuf, lnum);
     changed_common(lnum, col, lnum + 1, 0L);
 
+#ifdef FEAT_SPELL
+    // When text has been changed at the end of the line, possibly the start of
+    // the next line may have SpellCap that should be removed or it needs to be
+    // displayed.  Schedule the next line for redrawing just in case.
+    // Don't do this when displaying '$' at the end of changed text.
+    if (spell_check_window(curwin)
+	    && lnum < curbuf->b_ml.ml_line_count
+	    && vim_strchr(p_cpo, CPO_DOLLAR) == NULL)
+	redrawWinline(curwin, lnum + 1);
+#endif
 #ifdef FEAT_DIFF
     // Diff highlighting in other diff windows may need to be updated too.
     if (curwin->w_p_diff)
@@ -2259,21 +2269,23 @@ open_line(
     else
 	vreplace_mode = 0;
 
-    // May do lisp indenting.
-    if (!p_paste
-	    && leader == NULL
-	    && curbuf->b_p_lisp
-	    && curbuf->b_p_ai)
+    if (!p_paste)
     {
-	fixthisline(get_lisp_indent);
-	ai_col = (colnr_T)getwhitecols_curline();
-    }
-
-    // May do indenting after opening a new line.
-    if (do_cindent)
-    {
-	do_c_expr_indent();
-	ai_col = (colnr_T)getwhitecols_curline();
+	if (leader == NULL
+		&& !use_indentexpr_for_lisp()
+		&& curbuf->b_p_lisp
+		&& curbuf->b_p_ai)
+	{
+	    // do lisp indenting
+	    fixthisline(get_lisp_indent);
+	    ai_col = (colnr_T)getwhitecols_curline();
+	}
+	else if (do_cindent || (curbuf->b_p_ai && use_indentexpr_for_lisp()))
+	{
+	    // do 'cindent' or 'indentexpr' indenting
+	    do_c_expr_indent();
+	    ai_col = (colnr_T)getwhitecols_curline();
+	}
     }
 
     if (vreplace_mode != 0)

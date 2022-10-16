@@ -380,7 +380,7 @@ get_pt_outer(partial_T *pt)
  * Call compiled function "cdf_idx" from compiled code.
  * This adds a stack frame and sets the instruction pointer to the start of the
  * called function.
- * If "pt" is not null use "pt->pt_outer" for ec_outer_ref->or_outer.
+ * If "pt_arg" is not NULL use "pt_arg->pt_outer" for ec_outer_ref->or_outer.
  *
  * Stack has:
  * - current arguments (already there)
@@ -394,7 +394,7 @@ get_pt_outer(partial_T *pt)
     static int
 call_dfunc(
 	int		cdf_idx,
-	partial_T	*pt,
+	partial_T	*pt_arg,
 	int		argcount_arg,
 	ectx_T		*ectx)
 {
@@ -543,27 +543,21 @@ call_dfunc(
     STACK_TV_BOT(STACK_FRAME_IDX_OFF)->vval.v_number = ectx->ec_frame_idx;
     ectx->ec_frame_idx = ectx->ec_stack.ga_len;
 
-    // Initialize local variables
-    for (idx = 0; idx < dfunc->df_varcount; ++idx)
+    // Initialize all local variables to number zero.  Also initialize the
+    // variable that counts how many closures were created.  This is used in
+    // handle_closure_in_use().
+    int initcount = dfunc->df_varcount + (dfunc->df_has_closure ? 1 : 0);
+    for (idx = 0; idx < initcount; ++idx)
     {
 	typval_T *tv = STACK_TV_BOT(STACK_FRAME_SIZE + idx);
 
 	tv->v_type = VAR_NUMBER;
 	tv->vval.v_number = 0;
     }
-    if (dfunc->df_has_closure)
-    {
-	typval_T *tv = STACK_TV_BOT(STACK_FRAME_SIZE + dfunc->df_varcount);
-
-	// Initialize the variable that counts how many closures were created.
-	// This is used in handle_closure_in_use().
-	tv->v_type = VAR_NUMBER;
-	tv->vval.v_number = 0;
-    }
     ectx->ec_stack.ga_len += STACK_FRAME_SIZE + varcount;
 
-    if (pt != NULL || ufunc->uf_partial != NULL
-					     || (ufunc->uf_flags & FC_CLOSURE))
+    partial_T *pt = pt_arg != NULL ? pt_arg : ufunc->uf_partial;
+    if (pt != NULL || (ufunc->uf_flags & FC_CLOSURE))
     {
 	outer_ref_T *ref = ALLOC_CLEAR_ONE(outer_ref_T);
 
@@ -574,12 +568,6 @@ call_dfunc(
 	    ref->or_outer = get_pt_outer(pt);
 	    ++pt->pt_refcount;
 	    ref->or_partial = pt;
-	}
-	else if (ufunc->uf_partial != NULL)
-	{
-	    ref->or_outer = get_pt_outer(ufunc->uf_partial);
-	    ++ufunc->uf_partial->pt_refcount;
-	    ref->or_partial = ufunc->uf_partial;
 	}
 	else
 	{
@@ -722,7 +710,8 @@ handle_closure_in_use(ectx_T *ectx, int free_arguments)
 	    return FAIL;
 
 	funcstack->fs_var_offset = argcount + STACK_FRAME_SIZE;
-	funcstack->fs_ga.ga_len = funcstack->fs_var_offset + dfunc->df_varcount;
+	funcstack->fs_ga.ga_len = funcstack->fs_var_offset
+							  + dfunc->df_varcount;
 	stack = ALLOC_CLEAR_MULT(typval_T, funcstack->fs_ga.ga_len);
 	funcstack->fs_ga.ga_data = stack;
 	if (stack == NULL)
@@ -1278,7 +1267,8 @@ call_ufunc(
 
     if (error != FCERR_NONE)
     {
-	user_func_error(error, printable_func_name(ufunc), &funcexe);
+	user_func_error(error, printable_func_name(ufunc),
+							 funcexe.fe_found_var);
 	return FAIL;
     }
     if (did_emsg > did_emsg_before)
@@ -1868,7 +1858,10 @@ fill_partial_and_closure(
 		pt->pt_outer.out_loop[depth].var_count =
 					    lvi->lvi_loop[depth].var_count;
 	    }
+	    pt->pt_outer.out_loop_size = lvi->lvi_depth;
 	}
+	else
+	    pt->pt_outer.out_loop_size = 0;
 
 	// If the function currently executing returns and the closure is still
 	// being referenced, we need to make a copy of the context (arguments
@@ -3276,7 +3269,7 @@ exec_instructions(ectx_T *ectx)
 	    case ISN_ECHOCONSOLE:
 	    case ISN_ECHOERR:
 		{
-		    int		count = iptr->isn_arg.number;
+		    int		count;
 		    garray_T	ga;
 		    char_u	buf[NUMBUFLEN];
 		    char_u	*p;
@@ -3284,6 +3277,10 @@ exec_instructions(ectx_T *ectx)
 		    int		failed = FALSE;
 		    int		idx;
 
+		    if (iptr->isn_type == ISN_ECHOWINDOW)
+			count = iptr->isn_arg.echowin.ewin_count;
+		    else
+			count = iptr->isn_arg.number;
 		    ga_init2(&ga, 1, 80);
 		    for (idx = 0; idx < count; ++idx)
 		    {
@@ -3346,7 +3343,8 @@ exec_instructions(ectx_T *ectx)
 #ifdef HAS_MESSAGE_WINDOW
 			    else if (iptr->isn_type == ISN_ECHOWINDOW)
 			    {
-				start_echowindow();
+				start_echowindow(
+					      iptr->isn_arg.echowin.ewin_time);
 				msg_attr(ga.ga_data, echo_attr);
 				end_echowindow();
 			    }
@@ -4252,7 +4250,7 @@ exec_instructions(ectx_T *ectx)
 		    if (jump)
 			ectx->ec_iidx = iptr->isn_arg.whileloop.while_end;
 
-		    // Store the current funccal count, may be used by
+		    // Store the current funcref count, may be used by
 		    // ISN_ENDLOOP later
 		    tv = STACK_TV_VAR(
 				    iptr->isn_arg.whileloop.while_funcref_idx);
@@ -5739,14 +5737,10 @@ call_def_function(
 	    if (partial != NULL)
 	    {
 		outer_T *outer = get_pt_outer(partial);
-		int	depth;
-		void	*ptr = outer->out_stack;
 
-		// see if any stack was set
-		for (depth = 0; ptr == NULL && depth < MAX_LOOP_DEPTH; ++depth)
-		    ptr = outer->out_loop[depth].stack;
-		if (ptr == NULL)
+		if (outer->out_stack == NULL && outer->out_loop_size == 0)
 		{
+		    // no stack was set
 		    if (current_ectx != NULL)
 		    {
 			if (current_ectx->ec_outer_ref != NULL
@@ -5833,7 +5827,9 @@ call_def_function(
     ectx.ec_where.wt_index = 0;
     ectx.ec_where.wt_variable = FALSE;
 
-    // Execute the instructions until done.
+    /*
+     * Execute the instructions until done.
+     */
     ret = exec_instructions(&ectx);
     if (ret == OK)
     {
@@ -5892,7 +5888,11 @@ call_def_function(
 failed_early:
     // Free all arguments and local variables.
     for (idx = 0; idx < ectx.ec_stack.ga_len; ++idx)
-	clear_tv(STACK_TV(idx));
+    {
+	tv = STACK_TV(idx);
+	if (tv->v_type != VAR_NUMBER && tv->v_type != VAR_UNKNOWN)
+	    clear_tv(tv);
+    }
     ex_nesting_level = orig_nesting_level;
 
     vim_free(ectx.ec_stack.ga_data);
@@ -6099,8 +6099,13 @@ list_instructions(char *pfx, isn_T *instr, int instr_count, ufunc_T *ufunc)
 					  (varnumber_T)(iptr->isn_arg.number));
 		break;
 	    case ISN_ECHOWINDOW:
-		smsg("%s%4d ECHOWINDOW %lld", pfx, current,
-					  (varnumber_T)(iptr->isn_arg.number));
+		if (iptr->isn_arg.echowin.ewin_time > 0)
+		    smsg("%s%4d ECHOWINDOW %d (%ld sec)", pfx, current,
+				      iptr->isn_arg.echowin.ewin_count,
+				      iptr->isn_arg.echowin.ewin_time);
+		else
+		    smsg("%s%4d ECHOWINDOW %d", pfx, current,
+					     iptr->isn_arg.echowin.ewin_count);
 		break;
 	    case ISN_ECHOCONSOLE:
 		smsg("%s%4d ECHOCONSOLE %lld", pfx, current,
@@ -6382,11 +6387,11 @@ list_instructions(char *pfx, isn_T *instr, int instr_count, ufunc_T *ufunc)
 		break;
 	    case ISN_NEWLIST:
 		smsg("%s%4d NEWLIST size %lld", pfx, current,
-					    (varnumber_T)(iptr->isn_arg.number));
+					  (varnumber_T)(iptr->isn_arg.number));
 		break;
 	    case ISN_NEWDICT:
 		smsg("%s%4d NEWDICT size %lld", pfx, current,
-					    (varnumber_T)(iptr->isn_arg.number));
+					  (varnumber_T)(iptr->isn_arg.number));
 		break;
 	    case ISN_NEWPARTIAL:
 		smsg("%s%4d NEWPARTIAL", pfx, current);

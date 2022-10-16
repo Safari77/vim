@@ -153,7 +153,7 @@ static termrequest_T *all_termrequests[] = {
 
 // The t_8u code may default to a value but get reset when the term response is
 // received.  To avoid redrawing too often, only redraw when t_8u is not reset
-// and it was supposed to be written.
+// and it was supposed to be written.  Unless t_8u was set explicitly.
 // FALSE -> don't output t_8u yet
 // MAYBE -> tried outputing t_8u while FALSE
 // OK    -> can write t_8u
@@ -3011,7 +3011,10 @@ term_bg_rgb_color(guicolor_T rgb)
 term_ul_rgb_color(guicolor_T rgb)
 {
 # ifdef FEAT_TERMRESPONSE
-    if (write_t_8u_state != OK)
+    // If the user explicitly sets t_8u then use it.  Otherwise wait for
+    // termresponse to be received, which is when t_8u would be set and a
+    // redraw is needed if it was used.
+    if (!option_was_set((char_u *)"t_8u") && write_t_8u_state != OK)
 	write_t_8u_state = MAYBE;
     else
 # endif
@@ -4804,6 +4807,28 @@ handle_version_response(int first, int *arg, int argc, char_u *tp)
 }
 
 /*
+ * Add "key" to "buf" and return the number of bytes used.
+ * Handles special keys and multi-byte characters.
+ */
+    static int
+add_key_to_buf(int key, char_u *buf)
+{
+    int idx = 0;
+
+    if (IS_SPECIAL(key))
+    {
+	buf[idx++] = K_SPECIAL;
+	buf[idx++] = KEY2TERMCAP0(key);
+	buf[idx++] = KEY2TERMCAP1(key);
+    }
+    else if (has_mbyte)
+	idx += (*mb_char2bytes)(key, buf + idx);
+    else
+	buf[idx++] = key;
+    return idx;
+}
+
+/*
  * Handle a sequence with key and modifier, one of:
  *	{lead}27;{modifier};{key}~
  *	{lead}{key};{modifier}u
@@ -4821,7 +4846,6 @@ handle_key_with_modifier(
 {
     int	    key;
     int	    modifiers;
-    int	    new_slen;
     char_u  string[MAX_KEY_CODE_LEN + 1];
 
     seenModifyOtherKeys = TRUE;
@@ -4839,18 +4863,33 @@ handle_key_with_modifier(
     modifiers = may_remove_shift_modifier(modifiers, key);
 
     // insert modifiers with KS_MODIFIER
-    new_slen = modifiers2keycode(modifiers, &key, string);
+    int new_slen = modifiers2keycode(modifiers, &key, string);
 
-    if (IS_SPECIAL(key))
-    {
-	string[new_slen++] = K_SPECIAL;
-	string[new_slen++] = KEY2TERMCAP0(key);
-	string[new_slen++] = KEY2TERMCAP1(key);
-    }
-    else if (has_mbyte)
-	new_slen += (*mb_char2bytes)(key, string + new_slen);
-    else
-	string[new_slen++] = key;
+    // add the bytes for the key
+    new_slen += add_key_to_buf(key, string + new_slen);
+
+    if (put_string_in_typebuf(offset, csi_len, string, new_slen,
+						 buf, bufsize, buflen) == FAIL)
+	return -1;
+    return new_slen - csi_len + offset;
+}
+
+/*
+ * Handle a sequence with key without a modifier:
+ *	{lead}{key}u
+ * Returns the difference in length.
+ */
+    static int
+handle_key_without_modifier(
+	int	*arg,
+	int	csi_len,
+	int	offset,
+	char_u	*buf,
+	int	bufsize,
+	int	*buflen)
+{
+    char_u  string[MAX_KEY_CODE_LEN + 1];
+    int	    new_slen = add_key_to_buf(arg[0], string);
 
     if (put_string_in_typebuf(offset, csi_len, string, new_slen,
 						 buf, bufsize, buflen) == FAIL)
@@ -5010,6 +5049,14 @@ handle_csi(
 	    || (argc == 2 && trail == 'u'))
     {
 	return len + handle_key_with_modifier(arg, trail,
+			    csi_len, offset, buf, bufsize, buflen);
+    }
+
+    // Key without modifier (bad Kitty may send this):
+    //	{lead}{key}u
+    else if (argc == 1 && trail == 'u')
+    {
+	return len + handle_key_without_modifier(arg,
 			    csi_len, offset, buf, bufsize, buflen);
     }
 
@@ -6730,23 +6777,39 @@ cterm_color2rgb(int nr, char_u *r, char_u *g, char_u *b, char_u *ansi_idx)
 #endif
 
 /*
- * Replace K_BS by <BS> and K_DEL by <DEL>
+ * Replace K_BS by <BS> and K_DEL by <DEL>.
+ * Include any modifiers into the key and drop them.
+ * Returns "len" adjusted for replaced codes.
  */
-    void
-term_replace_bs_del_keycode(char_u *ta_buf, int ta_len, int len)
+    int
+term_replace_keycodes(char_u *ta_buf, int ta_len, int len_arg)
 {
+    int		len = len_arg;
     int		i;
     int		c;
 
     for (i = ta_len; i < ta_len + len; ++i)
     {
-	if (ta_buf[i] == CSI && len - i > 2)
+	if (ta_buf[i] == CSI && len - i > 3 && ta_buf[i + 1] == KS_MODIFIER)
+	{
+	    int modifiers = ta_buf[i + 2];
+	    int key = ta_buf[i + 3];
+
+	    // Try to use the modifier to modify the key.  In any case drop the
+	    // modifier.
+	    mch_memmove(ta_buf + i + 1, ta_buf + i + 4, (size_t)(len - i - 3));
+	    len -= 3;
+	    if (key < 0x80)
+		key = merge_modifyOtherKeys(key, &modifiers);
+	    ta_buf[i] = key;
+	}
+	else if (ta_buf[i] == CSI && len - i > 2)
 	{
 	    c = TERMCAP2KEY(ta_buf[i + 1], ta_buf[i + 2]);
 	    if (c == K_DEL || c == K_KDEL || c == K_BS)
 	    {
 		mch_memmove(ta_buf + i + 1, ta_buf + i + 3,
-			(size_t)(len - i - 2));
+							(size_t)(len - i - 2));
 		if (c == K_DEL || c == K_KDEL)
 		    ta_buf[i] = DEL;
 		else
@@ -6759,4 +6822,5 @@ term_replace_bs_del_keycode(char_u *ta_buf, int ta_len, int len)
 	if (has_mbyte)
 	    i += (*mb_ptr2len_len)(ta_buf + i, ta_len + len - i) - 1;
     }
+    return len;
 }
