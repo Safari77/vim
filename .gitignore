@@ -9,6 +9,8 @@ src/auto/os_haiku.rdef
 src/objects/.dirstamp
 src/objects
 src/types.vim
+/.github/
+/src/link.cmd
 
 # We do need src/auto/configure.
 src/auto/config.cache

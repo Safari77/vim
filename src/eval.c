@@ -66,6 +66,12 @@ num_divide(varnumber_T n1, varnumber_T n2, int *failed)
 	else
 	    result = VARNUM_MAX;
     }
+    else if (n1 == VARNUM_MIN && n2 == -1)
+    {
+	// specific case: trying to do VARNUM_MIN / -1 results in a positive
+	// number that doesn't fit in varnumber_T and causes an FPE
+	result = VARNUM_MAX;
+    }
     else
 	result = n1 / n2;
 
@@ -1370,7 +1376,8 @@ get_lval(
 		else
 		    prevval = 0; // avoid compiler warning
 		wrong = (lp->ll_dict->dv_scope == VAR_DEF_SCOPE
-			       && rettv->v_type == VAR_FUNC
+			       && (rettv->v_type == VAR_FUNC
+					    || rettv->v_type == VAR_PARTIAL)
 			       && var_wrong_func_name(key, lp->ll_di == NULL))
 			|| !valid_varname(key, -1, TRUE);
 		if (len != -1)
@@ -3263,7 +3270,7 @@ eval5(char_u **arg, typval_T *rettv, evalarg_T *evalarg)
 	    if (var2.v_type != VAR_NUMBER)
 		emsg(_(e_bitshift_ops_must_be_number));
 	    else
-		emsg(_(e_bitshift_ops_must_be_postive));
+		emsg(_(e_bitshift_ops_must_be_positive));
 	    clear_tv(rettv);
 	    clear_tv(&var2);
 	    return FAIL;
@@ -6023,7 +6030,7 @@ var2fpos(
 }
 
 /*
- * Convert list in "arg" into position "psop" and optional file number "fnump".
+ * Convert list in "arg" into position "posp" and optional file number "fnump".
  * When "fnump" is NULL there is no file number, only 3 items: [lnum, col, off]
  * Note that the column is passed on as-is, the caller may want to decrement
  * it to use 1 for the first column.

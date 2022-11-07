@@ -369,6 +369,9 @@ au BufNewFile,BufRead *.ch			call dist#ft#FTchange()
 " ChordPro
 au BufNewFile,BufRead *.chopro,*.crd,*.cho,*.crdpro,*.chordpro	setf chordpro
 
+" Clang-format
+au BufNewFile,BufRead .clang-format		setf yaml
+
 " Clang-tidy
 au BufNewFile,BufRead .clang-tidy		setf yaml
 
@@ -1001,7 +1004,7 @@ au BufNewFile,BufRead .babelrc,.eslintrc,.prettierrc,.firebaserc  setf json
 au BufNewFile,BufRead *.jsonc			setf jsonc
 
 " Jsonnet
-au BufNewFile,BufRead *.jsonnet,*.libjsonnet	setf jsonnet
+au BufNewFile,BufRead *.jsonnet,*.libsonnet	setf jsonnet
 
 " Julia
 au BufNewFile,BufRead *.jl			setf julia
@@ -1369,6 +1372,7 @@ au BufNewFile,BufRead pf.conf				setf pf
 
 " ini style config files, using # comments
 au BufNewFile,BufRead */etc/pacman.conf,mpv.conf	setf confini
+au BufNewFile,BufRead */.aws/config,*/.aws/credentials	setf confini
 
 " Pacman hooks
 au BufNewFile,BufRead *.hook

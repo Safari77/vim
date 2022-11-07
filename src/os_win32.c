@@ -1231,7 +1231,6 @@ mch_bevalterm_changed(void)
 }
 # endif
 
-
 /*
  * Win32 console mouse scroll event handler.
  * Loosely based on the _OnMouseWheel() function in gui_w32.c
@@ -1264,11 +1263,9 @@ decode_mouse_wheel(MOUSE_EVENT_RECORD *pmer)
     g_yMouse = pmer->dwMousePosition.Y;
 
 #ifdef FEAT_PROP_POPUP
-    int lcol;
-    int lrow;
-    lcol = g_xMouse;
-    lrow = g_yMouse;
-    wp = mouse_find_win(&lrow, &lcol, FAIL_POPUP);
+    int lcol = g_xMouse;
+    int lrow = g_yMouse;
+    wp = mouse_find_win(&lrow, &lcol, FIND_POPUP);
     if (wp != NULL && popup_is_popup(wp))
     {
 	g_nMouseClick = -1;
@@ -1310,11 +1307,11 @@ decode_mouse_wheel(MOUSE_EVENT_RECORD *pmer)
     else
 	direction = zDelta >= 0 ? KE_MOUSEDOWN : KE_MOUSEUP;
 
-    // Decode the win32 console key modifers into Vim mouse modifers.
+    // Decode the win32 console key modifiers into Vim mouse modifiers.
     if (pmer->dwControlKeyState & SHIFT_PRESSED)
-	modifiers |= MOD_MASK_SHIFT; //MOUSE_SHIFT;
+	modifiers |= MOD_MASK_SHIFT; // MOUSE_SHIFT;
     if (pmer->dwControlKeyState & (RIGHT_CTRL_PRESSED | LEFT_CTRL_PRESSED))
-	modifiers |= MOD_MASK_CTRL; //MOUSE_CTRL;
+	modifiers |= MOD_MASK_CTRL; // MOUSE_CTRL;
     if (pmer->dwControlKeyState & (RIGHT_ALT_PRESSED  | LEFT_ALT_PRESSED))
 	modifiers |= MOD_MASK_ALT; // MOUSE_ALT;
 
@@ -1394,7 +1391,7 @@ decode_mouse_event(
 	return FALSE;
     }
 
-    // unprocessed mouse click?
+    // If there is an unprocessed mouse click drop this one.
     if (g_nMouseClick != -1)
 	return TRUE;
 
@@ -4397,7 +4394,6 @@ dump_pipe(int	    options,
     int		ret;
     DWORD	len;
     DWORD	toRead;
-    int		repeatCount;
 
     // we query the pipe to see if there is any data to read
     // to avoid to perform a blocking read
@@ -4408,11 +4404,9 @@ dump_pipe(int	    options,
 			&availableBytes,    // available bytes total
 			NULL);		    // byteLeft
 
-    repeatCount = 0;
     // We got real data in the pipe, read it
     while (ret != 0 && availableBytes > 0)
     {
-	repeatCount++;
 	toRead = (DWORD)(BUFLEN - *buffer_off);
 	toRead = availableBytes < toRead ? availableBytes : toRead;
 	ReadFile(g_hChildStd_OUT_Rd, buffer + *buffer_off, toRead , &len, NULL);
