@@ -621,7 +621,7 @@ textprop_size_after_trunc(
 text_prop_position(
 	win_T	    *wp,
 	textprop_T  *tp,
-	int	    vcol UNUSED,    // current text column
+	int	    vcol,	    // current text column
 	int	    scr_col,	    // current screen column
 	int	    *n_extra,	    // nr of bytes for virtual text
 	char_u	    **p_extra,	    // virtual text
@@ -633,7 +633,7 @@ text_prop_position(
     int	    below = (tp->tp_flags & TP_FLAG_ALIGN_BELOW);
     int	    wrap = (tp->tp_flags & TP_FLAG_WRAP);
     int	    padding = tp->tp_col == MAXCOL && tp->tp_len > 1
-				  ? tp->tp_len - 1 : 0;
+							  ? tp->tp_len - 1 : 0;
     int	    col_with_padding = scr_col + (below ? 0 : padding);
     int	    room = wp->w_width - col_with_padding;
     int	    before = room;	// spaces before the text
@@ -661,11 +661,16 @@ text_prop_position(
 	    // Right-align: fill with before
 	    if (right)
 		before -= cells;
+
+	    // Below-align: empty line add one character
+	    if (below && vcol == 0 && col_with_padding == col_off
+					    && wp->w_width - col_off == before)
+		col_with_padding += 1;
+
 	    if (before < 0
 		    || !(right || below)
-		    || (below
-			? (col_with_padding <= col_off || !wp->w_p_wrap)
-			: (n_used < *n_extra)))
+		    || (below ? (col_with_padding <= col_off || !wp->w_p_wrap)
+			      : (n_used < *n_extra)))
 	    {
 		if (right && (wrap
 			      || (room < PROP_TEXT_MIN_CELLS && wp->w_p_wrap)))
@@ -948,6 +953,7 @@ win_line_continue(winlinevars_T *wlv)
     {
 	// Continue item from end of wrapped line.
 	wlv->n_extra = wlv->saved_n_extra;
+	wlv->saved_n_extra = 0;
 	wlv->c_extra = wlv->saved_c_extra;
 	wlv->c_final = wlv->saved_c_final;
 	wlv->p_extra = wlv->saved_p_extra;
@@ -1046,6 +1052,7 @@ win_line(
     int		saved_search_attr = 0;	// search_attr to be used when n_extra
 					// goes to zero
     int		saved_area_attr = 0;	// idem for area_attr
+    int		reset_extra_attr = FALSE;
 #endif
 #ifdef FEAT_SPELL
     int		has_spell = FALSE;	// this buffer has spell checking
@@ -1919,6 +1926,7 @@ win_line(
 		    text_prop_flags = 0;
 		    text_prop_type = NULL;
 		    text_prop_id = 0;
+		    reset_extra_attr = FALSE;
 		}
 		if (text_props_active > 0 && wlv.n_extra == 0)
 		{
@@ -2400,18 +2408,23 @@ win_line(
 #if defined(FEAT_PROP_POPUP)
 	    if (wlv.n_extra <= 0)
 	    {
-		wlv.extra_for_textprop = FALSE;
-		in_linebreak = FALSE;
-
-		// only restore search_attr and area_attr after extra in the
-		// next screen line is also done
+		// Only restore search_attr and area_attr after "n_extra" in
+		// the next screen line is also done.
 		if (wlv.saved_n_extra <= 0)
 		{
 		    if (search_attr == 0)
 			search_attr = saved_search_attr;
 		    if (area_attr == 0 && *ptr != NUL)
 			area_attr = saved_area_attr;
+
+		    if (wlv.extra_for_textprop)
+			// wlv.extra_attr should be used at this position but
+			// not any further.
+			reset_extra_attr = TRUE;
 		}
+
+		wlv.extra_for_textprop = FALSE;
+		in_linebreak = FALSE;
 	    }
 #endif
 	}
@@ -3317,6 +3330,13 @@ win_line(
 	    else
 #endif
 		wlv.char_attr = wlv.extra_attr;
+#ifdef FEAT_PROP_POPUP
+	    if (reset_extra_attr)
+	    {
+		reset_extra_attr = FALSE;
+		wlv.extra_attr = 0;
+	    }
+#endif
 	}
 
 #if defined(FEAT_XIM) && defined(FEAT_GUI_GTK)

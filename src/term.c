@@ -66,16 +66,6 @@ static int find_term_bykeys(char_u *src);
 static int term_is_builtin(char_u *name);
 static int term_7to8bit(char_u *p);
 
-#ifdef HAVE_TGETENT
-static char *invoke_tgetent(char_u *, char_u *);
-
-/*
- * Here is our own prototype for tgetstr(), any prototypes from the include
- * files have been disabled by the define at the start of this file.
- */
-char		*tgetstr(char *, char **);
-
-# ifdef FEAT_TERMRESPONSE
     // Change this to "if 1" to debug what happens with termresponse.
 #  if 0
 #   define DEBUG_TERMRESPONSE
@@ -84,6 +74,16 @@ static void log_tr(const char *fmt, ...) ATTRIBUTE_FORMAT_PRINTF(1, 2);
 #  else
 #   define LOG_TR(msg) do { /**/ } while (0)
 #  endif
+
+#ifdef HAVE_TGETENT
+static char *invoke_tgetent(char_u *, char_u *);
+
+/*
+ * Here is our own prototype for tgetstr(), any prototypes from the include
+ * files have been disabled by the define at the start of this file.
+ */
+char		*tgetstr(char *, char **);
+#endif
 
 typedef enum {
     STATUS_GET,		// send request when switching to RAW mode
@@ -97,7 +97,7 @@ typedef struct {
     time_t		    tr_start;	// when request was sent, -1 for never
 } termrequest_T;
 
-#  define TERMREQUEST_INIT {STATUS_GET, -1}
+# define TERMREQUEST_INIT {STATUS_GET, -1}
 
 // Request Terminal Version status:
 static termrequest_T crv_status = TERMREQUEST_INIT;
@@ -108,7 +108,8 @@ static termrequest_T u7_status = TERMREQUEST_INIT;
 // Request xterm compatibility check:
 static termrequest_T xcc_status = TERMREQUEST_INIT;
 
-#  ifdef FEAT_TERMINAL
+#ifdef FEAT_TERMRESPONSE
+# ifdef FEAT_TERMINAL
 // Request foreground color report:
 static termrequest_T rfg_status = TERMREQUEST_INIT;
 static int fg_r = 0;
@@ -117,7 +118,7 @@ static int fg_b = 0;
 static int bg_r = 255;
 static int bg_g = 255;
 static int bg_b = 255;
-#  endif
+# endif
 
 // Request background color report:
 static termrequest_T rbg_status = TERMREQUEST_INIT;
@@ -152,8 +153,9 @@ static termrequest_T *all_termrequests[] = {
 // MAYBE -> tried outputting t_8u while FALSE
 // OK    -> can write t_8u
 int write_t_8u_state = FALSE;
-# endif
+#endif
 
+#ifdef HAVE_TGETENT
 /*
  * Don't declare these variables if termcap.h contains them.
  * Autoconf checks if these variables should be declared extern (not all
@@ -450,7 +452,7 @@ static tcap_entry_T builtin_xterm[] = {
     {(int)KS_TI,	"\0337\033[?47h"},
     {(int)KS_TE,	"\033[?47l\0338"},
 #  endif
-    {(int)KS_CTI,	"\033[>4;2m"},
+    {(int)KS_CTI,	"\033[>4;2m\033[?4m"},  // see "builtin_mok2"
     {(int)KS_CTE,	"\033[>4;m"},
     {(int)KS_CIS,	"\033]1;"},
     {(int)KS_CIE,	"\007"},
@@ -582,6 +584,35 @@ static tcap_entry_T builtin_xterm[] = {
     {TERMCAP2KEY('F', 'P'), "\033[56;*~"}, // F35
     {TERMCAP2KEY('F', 'Q'), "\033[57;*~"}, // F36
     {TERMCAP2KEY('F', 'R'), "\033[58;*~"}, // F37
+
+    {(int)KS_NAME,	NULL}  // end marker
+};
+
+/*
+ * Additions for using modifyOtherKeys level 2.  Same as what is used for
+ * xterm.
+ */
+static tcap_entry_T builtin_mok2[] = {
+    // XTQMODKEYS was added in xterm version 377: "CSI ? 4 m" which should
+    // return "{lead} > 4 ; Pv m".  Before version 377 we expect it to have no
+    // effect.
+    {(int)KS_CTI,	"\033[>4;2m\033[?4m"},
+    {(int)KS_CTE,	"\033[>4;m"},
+
+    {(int)KS_NAME,	NULL}  // end marker
+};
+
+/*
+ * Additions for using the Kitty keyboard protocol.
+ */
+static tcap_entry_T builtin_kitty[] = {
+    // t_TI enables the kitty keyboard protocol, requests the kitty keyboard
+    // protocol state and requests the version response.
+    {(int)KS_CTI,	"\033[=1;1u\033[?u\033[>c"},
+
+    // t_TE also disabled modifyOtherKeys, because t_TI from xterm may already
+    // have been used.
+    {(int)KS_CTE,	"\033[>4;m\033[=0;1u"},
 
     {(int)KS_NAME,	NULL}  // end marker
 };
@@ -1377,6 +1408,7 @@ static int	need_gather = FALSE;	    // need to fill termleader[]
 static char_u	termleader[256 + 1];	    // for check_termcode()
 #ifdef FEAT_TERMRESPONSE
 static int	check_for_codes = FALSE;    // check for key code response
+#endif
 
 /*
  * Structure and table to store terminal features that can be detected by
@@ -1438,7 +1470,6 @@ init_term_props(int all)
 	if (all || term_props[i].tpr_set_by_termresponse)
 	    term_props[i].tpr_status = TPR_UNKNOWN;
 }
-#endif
 
 #if defined(FEAT_EVAL) || defined(PROTO)
     void
@@ -1494,26 +1525,22 @@ find_builtin_term(char_u *term)
 }
 
 /*
- * Parsing of the builtin termcap entries.
- * Caller should check if "term" is a valid builtin terminal name.
- * The terminal's name is not set, as this is already done in termcapinit().
+ * Apply entries from a builtin termcap.
  */
     static void
-parse_builtin_tcap(char_u *term)
+apply_builtin_tcap(char_u *term, tcap_entry_T *entries, int overwrite)
 {
-    tcap_entry_T *p = find_builtin_term(term);
-    if (p == NULL)  // builtin term not found
-	return;
-
     int term_8bit = term_is_8bit(term);
 
-    for (++p; p->bt_entry != (int)KS_NAME && p->bt_entry != BT_EXTRA_KEYS; ++p)
+    for (tcap_entry_T *p = entries;
+	      p->bt_entry != (int)KS_NAME && p->bt_entry != BT_EXTRA_KEYS; ++p)
     {
 	if ((int)p->bt_entry >= 0)	// KS_xx entry
 	{
-	    // Only set the value if it wasn't set yet.
+	    // Only set the value if it wasn't set yet or "overwrite" is TRUE.
 	    if (term_strings[p->bt_entry] == NULL
-				 || term_strings[p->bt_entry] == empty_option)
+		    || term_strings[p->bt_entry] == empty_option
+		    || overwrite)
 	    {
 #ifdef FEAT_EVAL
 		int opt_idx = -1;
@@ -1557,10 +1584,23 @@ parse_builtin_tcap(char_u *term)
 	    char_u  name[2];
 	    name[0] = KEY2TERMCAP0((int)p->bt_entry);
 	    name[1] = KEY2TERMCAP1((int)p->bt_entry);
-	    if (find_termcode(name) == NULL)
+	    if (find_termcode(name) == NULL || overwrite)
 		add_termcode(name, (char_u *)p->bt_string, term_8bit);
 	}
     }
+}
+
+/*
+ * Parsing of the builtin termcap entries.
+ * Caller should check if "term" is a valid builtin terminal name.
+ * The terminal's name is not set, as this is already done in termcapinit().
+ */
+    static void
+parse_builtin_tcap(char_u *term)
+{
+    tcap_entry_T *entries = find_builtin_term(term);
+    if (entries != NULL)
+	apply_builtin_tcap(term, entries, FALSE);
 }
 
 /*
@@ -1581,7 +1621,6 @@ set_color_count(int nr)
     set_string_option_direct((char_u *)"t_Co", -1, nr_colors, OPT_FREE, 0);
 }
 
-#if defined(FEAT_TERMRESPONSE)
 /*
  * Set the color count to "val" and redraw if it changed.
  */
@@ -1590,25 +1629,23 @@ may_adjust_color_count(int val)
 {
     if (val != t_colors)
     {
-	// Nr of colors changed, initialize highlighting and
-	// redraw everything.  This causes a redraw, which usually
-	// clears the message.  Try keeping the message if it
-	// might work.
+	// Nr of colors changed, initialize highlighting and redraw everything.
+	// This causes a redraw, which usually clears the message.  Try keeping
+	// the message if it might work.
 	set_keep_msg_from_hist();
 	set_color_count(val);
 	init_highlight(TRUE, FALSE);
-# ifdef DEBUG_TERMRESPONSE
+#ifdef DEBUG_TERMRESPONSE
 	{
 	    int r = redraw_asap(UPD_CLEAR);
 
 	    log_tr("Received t_Co, redraw_asap(): %d", r);
 	}
-# else
+#else
 	redraw_asap(UPD_CLEAR);
-# endif
+#endif
     }
 }
-#endif
 
 #ifdef HAVE_TGETENT
 static char *(key_names[]) =
@@ -1799,6 +1836,67 @@ report_default_term(char_u *term)
 }
 
 /*
+ * Parse the 'keyprotocol' option, match against "term" and return the protocol
+ * for the first matching entry.
+ * When "term" is NULL then compile all patterns to check for any errors.
+ * Returns KEYPROTOCOL_FAIL if a pattern cannot be compiled.
+ * Returns KEYPROTOCOL_NONE if there is no match.
+ */
+    keyprot_T
+match_keyprotocol(char_u *term)
+{
+    int		len = (int)STRLEN(p_kpc) + 1;
+    char_u	*buf = alloc(len);
+    if (buf == NULL)
+	return KEYPROTOCOL_FAIL;
+
+    keyprot_T	ret = KEYPROTOCOL_FAIL;
+    char_u	*p = p_kpc;
+    while (*p != NUL)
+    {
+	// Isolate one comma separated item.
+	(void)copy_option_part(&p, buf, len, ",");
+	char_u *colon = vim_strchr(buf, ':');
+	if (colon == NULL || colon == buf || colon[1] == NUL)
+	    goto theend;
+	*colon = NUL;
+
+	keyprot_T prot;
+	if (STRCMP(colon + 1, "none") == 0)
+	    prot = KEYPROTOCOL_NONE;
+	else if (STRCMP(colon + 1, "mok2") == 0)
+	    prot = KEYPROTOCOL_MOK2;
+	else if (STRCMP(colon + 1, "kitty") == 0)
+	    prot = KEYPROTOCOL_KITTY;
+	else
+	    goto theend;
+
+	regmatch_T regmatch;
+	CLEAR_FIELD(regmatch);
+	regmatch.rm_ic = TRUE;
+	regmatch.regprog = vim_regcomp(buf, RE_MAGIC);
+	if (regmatch.regprog == NULL)
+	    goto theend;
+
+	int match = term != NULL && vim_regexec(&regmatch, term, (colnr_T)0);
+	vim_regfree(regmatch.regprog);
+	if (match)
+	{
+	    ret = prot;
+	    goto theend;
+	}
+
+    }
+
+    // No match found, use "none".
+    ret = KEYPROTOCOL_NONE;
+
+theend:
+    vim_free(buf);
+    return ret;
+}
+
+/*
  * Set terminal options for terminal "term".
  * Return OK if terminal 'term' was found in a termcap, FAIL otherwise.
  *
@@ -1924,6 +2022,15 @@ set_termname(char_u *term)
 	    }
 #endif
 	    parse_builtin_tcap(term);
+
+	    // Use the 'keyprotocol' option to adjust the t_TE and t_TI
+	    // termcap entries if there is an entry maching "term".
+	    keyprot_T kpc = match_keyprotocol(term);
+	    if (kpc == KEYPROTOCOL_KITTY)
+		apply_builtin_tcap(term, builtin_kitty, TRUE);
+	    else if (kpc == KEYPROTOCOL_MOK2)
+		apply_builtin_tcap(term, builtin_mok2, TRUE);
+
 #ifdef FEAT_GUI
 	    if (term_is_gui(term))
 	    {
@@ -2069,21 +2176,6 @@ set_termname(char_u *term)
     }
 #endif
 
-#if defined(UNIX) || defined(VMS)
-    /*
-     * 'ttyfast' is default on for xterm, iris-ansi and a few others.
-     */
-    if (vim_is_fastterm(term))
-	p_tf = TRUE;
-#endif
-#ifdef USE_TERM_CONSOLE
-    /*
-     * 'ttyfast' is default on consoles
-     */
-    if (term_console)
-	p_tf = TRUE;
-#endif
-
     ttest(TRUE);	// make sure we have a valid set of terminal codes
 
     full_screen = TRUE;		// we can use termcap codes from now on
@@ -2139,10 +2231,13 @@ set_termname(char_u *term)
 		if (curbuf->b_ml.ml_mfp != NULL)
 		{
 		    aucmd_prepbuf(&aco, buf);
-		    apply_autocmds(EVENT_TERMCHANGED, NULL, NULL, FALSE,
+		    if (curbuf == buf)
+		    {
+			apply_autocmds(EVENT_TERMCHANGED, NULL, NULL, FALSE,
 								      curbuf);
-		    // restore curwin/curbuf and a few other things
-		    aucmd_restbuf(&aco);
+			// restore curwin/curbuf and a few other things
+			aucmd_restbuf(&aco);
+		    }
 		}
 	    }
 	}
@@ -3439,28 +3534,9 @@ shell_resized_check(void)
  * If 'mustset' is FALSE, we may try to get the real window size and if
  * it fails use 'width' and 'height'.
  */
-    void
-set_shellsize(int width, int height, int mustset)
+    static void
+set_shellsize_inner(int width, int height, int mustset)
 {
-    static int		busy = FALSE;
-
-    /*
-     * Avoid recursiveness, can happen when setting the window size causes
-     * another window-changed signal.
-     */
-    if (busy)
-	return;
-
-    if (width < 0 || height < 0)    // just checking...
-	return;
-
-    if (State == MODE_HITRETURN || State == MODE_SETWSIZE)
-    {
-	// postpone the resizing
-	State = MODE_SETWSIZE;
-	return;
-    }
-
     if (updating_screen)
 	// resizing while in update_screen() may cause a crash
 	return;
@@ -3471,8 +3547,6 @@ set_shellsize(int width, int height, int mustset)
     // another buffer.
     if (curwin->w_buffer == NULL || curwin->w_lines == NULL)
 	return;
-
-    ++busy;
 
 #ifdef AMIGA
     out_flush();	    // must do this before mch_get_shellsize() for
@@ -3547,7 +3621,76 @@ set_shellsize(int width, int height, int mustset)
 	cursor_on();	    // redrawing may have switched it off
     }
     out_flush();
-    --busy;
+}
+
+    void
+set_shellsize(int width, int height, int mustset)
+{
+    static int	busy = FALSE;
+    static int	do_run = FALSE;
+
+    if (width < 0 || height < 0)    // just checking...
+	return;
+
+    if (State == MODE_HITRETURN || State == MODE_SETWSIZE)
+    {
+	// postpone the resizing
+	State = MODE_SETWSIZE;
+	return;
+    }
+
+    // Avoid recursiveness.  This can happen when setting the window size
+    // causes another window-changed signal or when two SIGWINCH signals come
+    // very close together.  There needs to be another run then after the
+    // current one is done to pick up the latest size.
+    do_run = TRUE;
+    if (busy)
+	return;
+
+    while (do_run)
+    {
+	do_run = FALSE;
+	busy = TRUE;
+	set_shellsize_inner(width, height, mustset);
+	busy = FALSE;
+    }
+}
+
+/*
+ * Output T_CTE, the t_TE termcap entry, and handle expected effects.
+ * The code possibly disables modifyOtherKeys and the Kitty keyboard protocol.
+ */
+    void
+out_str_t_TE(void)
+{
+    out_str(T_CTE);
+
+    // The seenModifyOtherKeys flag is not reset here.  We do expect t_TE to
+    // disable modifyOtherKeys, but until Xterm version 377 there is no way to
+    // detect it's enabled again after the following t_TI.  We assume that when
+    // seenModifyOtherKeys was set before it will still be valid.
+
+    // When the modifyOtherKeys level is detected to be 2 we expect t_TE to
+    // disable it.  Remembering that it was detected to be enabled is useful in
+    // some situations.
+    // The following t_TI is expected to request the state and then
+    // modify_otherkeys_state will be set again.
+    if (modify_otherkeys_state == MOKS_ENABLED
+	    || modify_otherkeys_state == MOKS_DISABLED)
+	modify_otherkeys_state = MOKS_DISABLED;
+    else if (modify_otherkeys_state != MOKS_INITIAL)
+	modify_otherkeys_state = MOKS_AFTER_T_KE;
+
+    // When the kitty keyboard protocol is enabled we expect t_TE to disable
+    // it.  Remembering that it was detected to be enabled is useful in some
+    // situations.
+    // The following t_TI is expected to request the state and then
+    // kitty_protocol_state will be set again.
+    if (kitty_protocol_state == KKPS_ENABLED
+	    || kitty_protocol_state == KKPS_DISABLED)
+	kitty_protocol_state = KKPS_DISABLED;
+    else
+	kitty_protocol_state = KKPS_AFTER_T_KE;
 }
 
 /*
@@ -3602,7 +3745,7 @@ settmode(tmode_T tmode)
 		if (tmode != TMODE_RAW)
 		{
 		    out_str(T_BD);	// disable bracketed paste mode
-		    out_str(T_CTE);	// possibly disables modifyOtherKeys
+		    out_str_t_TE();	// possibly disables modifyOtherKeys
 		}
 		else
 		{
@@ -3703,7 +3846,8 @@ stoptermcap(void)
 	out_flush();
 	termcap_active = FALSE;
 	cursor_on();			// just in case it is still off
-	out_str(T_CTE);			// stop "raw" mode
+	out_str_t_TE();			// stop "raw" mode, modifyOtherKeys and
+					// Kitty keyboard protocol
 	out_str(T_TE);			// stop termcap mode
 	screen_start();			// don't know where cursor is now
 	out_flush();
@@ -4407,7 +4551,6 @@ del_termcode_idx(int idx)
 	termcodes[i] = termcodes[i + 1];
 }
 
-#ifdef FEAT_TERMRESPONSE
 /*
  * Called when detected that the terminal sends 8-bit codes.
  * Convert all 7-bit codes to their 8-bit equivalent.
@@ -4435,7 +4578,6 @@ switch_to_8bit(void)
     detected_8bit = TRUE;
     LOG_TR(("Switching to 8 bit"));
 }
-#endif
 
 #ifdef CHECK_DOUBLE_CLICK
 static linenr_T orig_topline = 0;
@@ -4551,6 +4693,8 @@ decode_modifiers(int n)
 	modifiers |= MOD_MASK_CTRL;
     if (code & 8)
 	modifiers |= MOD_MASK_META;
+    // Any further modifiers are silently dropped.
+
     return modifiers;
 }
 
@@ -4575,7 +4719,6 @@ modifiers2keycode(int modifiers, int *key, char_u *string)
     return new_slen;
 }
 
-#ifdef FEAT_TERMRESPONSE
 /*
  * Handle a cursor position report.
  */
@@ -4599,18 +4742,18 @@ handle_u7_response(int *arg, char_u *tp UNUSED, int csi_len UNUSED)
 	    // that right away if possible, keeping any
 	    // messages.
 	    set_option_value_give_err((char_u *)"ambw", 0L, (char_u *)aw, 0);
-# ifdef DEBUG_TERMRESPONSE
+#ifdef DEBUG_TERMRESPONSE
 	    {
 		int r = redraw_asap(UPD_CLEAR);
 
 		log_tr("set 'ambiwidth', redraw_asap(): %d", r);
 	    }
-# else
+#else
 	    redraw_asap(UPD_CLEAR);
-# endif
-# ifdef FEAT_EVAL
+#endif
+#ifdef FEAT_EVAL
 	    set_vim_var_string(VV_TERMU7RESP, tp, csi_len);
-# endif
+#endif
 	}
     }
     else if (arg[0] == 3)
@@ -4671,8 +4814,6 @@ handle_version_response(int first, int *arg, int argc, char_u *tp)
     // Figure out more if the response is CSI > 99 ; 99 ; 99 c
     if (first == '>' && argc == 3)
     {
-	int need_flush = FALSE;
-
 	// mintty 2.9.5 sends 77;20905;0c.
 	// (77 is ASCII 'M' for mintty.)
 	if (arg[0] == 77)
@@ -4681,6 +4822,7 @@ handle_version_response(int first, int *arg, int argc, char_u *tp)
 	    term_props[TPR_MOUSE].tpr_status = TPR_MOUSE_SGR;
 	}
 
+#ifdef FEAT_TERMRESPONSE
 	// If xterm version >= 141 try to get termcap codes.  For other
 	// terminals the request should be ignored.
 	if (version >= 141 && p_xtermcodes)
@@ -4690,6 +4832,7 @@ handle_version_response(int first, int *arg, int argc, char_u *tp)
 	    need_gather = TRUE;
 	    req_codes_from_term();
 	}
+#endif
 
 	// libvterm sends 0;100;0
 	// Konsole sends 0;115;0 and works the same way
@@ -4818,10 +4961,12 @@ handle_version_response(int first, int *arg, int argc, char_u *tp)
 	    set_string_option_direct((char_u *)"t_8u", -1, (char_u *)"",
 								  OPT_FREE, 0);
 	}
+#ifdef FEAT_TERMRESPONSE
 	if (*T_8U != NUL && write_t_8u_state == MAYBE)
 	    // Did skip writing t_8u, a complete redraw is needed.
 	    redraw_later_clear();
 	write_t_8u_state = OK;  // can output t_8u now
+#endif
 
 	// Only set 'ttymouse' automatically if it was not set
 	// by the user already.
@@ -4833,6 +4978,9 @@ handle_version_response(int first, int *arg, int argc, char_u *tp)
 		    term_props[TPR_MOUSE].tpr_status == TPR_MOUSE_SGR
 				    ? (char_u *)"sgr" : (char_u *)"xterm2", 0);
 	}
+
+#ifdef FEAT_TERMRESPONSE
+	int need_flush = FALSE;
 
 	// Only request the cursor style if t_SH and t_RS are
 	// set. Only supported properly by xterm since version
@@ -4869,6 +5017,7 @@ handle_version_response(int first, int *arg, int argc, char_u *tp)
 
 	if (need_flush)
 	    out_flush();
+#endif
     }
 }
 
@@ -4914,9 +5063,22 @@ handle_key_with_modifier(
     int	    modifiers;
     char_u  string[MAX_KEY_CODE_LEN + 1];
 
+    // Only set seenModifyOtherKeys for the "{lead}27;" code to avoid setting
+    // it for terminals using the kitty keyboard protocol.  Xterm sends
+    // the form ending in "u" when the formatOtherKeys resource is set.  We do
+    // not support this.
+    //
+    // Do not set seenModifyOtherKeys if there was a positive response at any
+    // time from requesting the kitty keyboard protocol state, these are not
+    // expected to support modifyOtherKeys level 2.
+    //
     // Do not set seenModifyOtherKeys for kitty, it does send some sequences
     // like this but does not have the modifyOtherKeys feature.
-    if (term_props[TPR_KITTY].tpr_status != TPR_YES)
+    if (trail != 'u'
+	    && (kitty_protocol_state == KKPS_INITIAL
+		|| kitty_protocol_state == KKPS_OFF
+		|| kitty_protocol_state == KKPS_AFTER_T_KE)
+	    && term_props[TPR_KITTY].tpr_status != TPR_YES)
 	seenModifyOtherKeys = TRUE;
 
     if (trail == 'u')
@@ -4959,7 +5121,19 @@ handle_key_without_modifier(
 	int	*buflen)
 {
     char_u  string[MAX_KEY_CODE_LEN + 1];
-    int	    new_slen = add_key_to_buf(arg[0], string);
+    int	    new_slen;
+
+    if (arg[0] == ESC)
+    {
+	// Putting Esc in the buffer creates ambiguity, it can be the start of
+	// an escape sequence.  Use K_ESC to avoid that.
+	string[0] = K_SPECIAL;
+	string[1] = KS_EXTRA;
+	string[2] = KE_ESC;
+	new_slen = 3;
+    }
+    else
+	new_slen = add_key_to_buf(arg[0], string);
 
     if (put_string_in_typebuf(offset, csi_len, string, new_slen,
 						 buf, bufsize, buflen) == FAIL)
@@ -4971,6 +5145,8 @@ handle_key_without_modifier(
  * Handle a CSI escape sequence.
  * - Xterm version string.
  *
+ * - Response to XTQMODKEYS: "{lead} > 4 ; Pv m".
+ *
  * - Cursor position report: {lead}{row};{col}R
  *   The final byte must be 'R'. It is used for checking the
  *   ambiguous-width character state.
@@ -4980,6 +5156,7 @@ handle_key_without_modifier(
  * - key with modifiers when modifyOtherKeys is enabled:
  *	    {lead}27;{modifier};{key}~
  *	    {lead}{key};{modifier}u
+ *
  * Return 0 for no match, -1 for partial match, > 0 for full match.
  */
     static int
@@ -5043,12 +5220,24 @@ handle_csi(
     trail = *ap;
     csi_len = (int)(ap - tp) + 1;
 
+    // Response to XTQMODKEYS: "CSI > 4 ; Pv m" where Pv indicates the
+    // modifyOtherKeys level.  Drop similar responses.
+    if (first == '>' && (argc == 1 || argc == 2) && trail == 'm')
+    {
+	if (arg[0] == 4 && argc == 2)
+	    modify_otherkeys_state = arg[1] == 2 ? MOKS_ENABLED : MOKS_OFF;
+
+	key_name[0] = (int)KS_EXTRA;
+	key_name[1] = (int)KE_IGNORE;
+	*slen = csi_len;
+    }
+
     // Cursor position report: Eat it when there are 2 arguments
     // and it ends in 'R'. Also when u7_status is not "sent", it
     // may be from a previous Vim that just exited.  But not for
     // <S-F3>, it sends something similar, check for row and column
     // to make sense.
-    if (first == -1 && argc == 2 && trail == 'R')
+    else if (first == -1 && argc == 2 && trail == 'R')
     {
 	handle_u7_response(arg, tp, csi_len);
 
@@ -5064,15 +5253,16 @@ handle_csi(
 	handle_version_response(first, arg, argc, tp);
 
 	*slen = csi_len;
-# ifdef FEAT_EVAL
+#ifdef FEAT_EVAL
 	set_vim_var_string(VV_TERMRESPONSE, tp, *slen);
-# endif
+#endif
 	apply_autocmds(EVENT_TERMRESPONSE,
 					NULL, NULL, FALSE, curbuf);
 	key_name[0] = (int)KS_EXTRA;
 	key_name[1] = (int)KE_IGNORE;
     }
 
+#ifdef FEAT_TERMRESPONSE
     // Check blinking cursor from xterm:
     // {lead}?12;1$y       set
     // {lead}?12;2$y       not set
@@ -5095,7 +5285,32 @@ handle_csi(
 	set_vim_var_string(VV_TERMBLINKRESP, tp, *slen);
 # endif
     }
+#endif
 
+    // Kitty keyboard protocol status response: CSI ? flags u
+    else if (first == '?' && argc == 1 && trail == 'u')
+    {
+	// The protocol has various "progressive enhancement flags" values, but
+	// we only check for zero and non-zero here.
+	if (arg[0] == '0')
+	{
+	    kitty_protocol_state = KKPS_OFF;
+	}
+	else
+	{
+	    kitty_protocol_state = KKPS_ENABLED;
+
+	    // Reset seenModifyOtherKeys just in case some key combination has
+	    // been seen that set it before we get the status response.
+	    seenModifyOtherKeys = FALSE;
+	}
+
+	key_name[0] = (int)KS_EXTRA;
+	key_name[1] = (int)KE_IGNORE;
+	*slen = csi_len;
+    }
+
+#ifdef FEAT_TERMRESPONSE
     // Check for a window position response from the terminal:
     //       {lead}3;{x};{y}t
     else if (did_request_winpos && argc == 3 && arg[0] == 3
@@ -5111,21 +5326,22 @@ handle_csi(
 	if (--did_request_winpos <= 0)
 	    winpos_status.tr_progress = STATUS_GOT;
     }
+#endif
 
     // Key with modifier:
     //	{lead}27;{modifier};{key}~
     //	{lead}{key};{modifier}u
-    // Only handles four modifiers, this won't work if the modifier value is
-    // more than 16.
-    else if (((arg[0] == 27 && argc == 3 && trail == '~')
+    // Even though we only handle four modifiers and the {modifier} value
+    // should be 16 or lower, we accept all modifier values to avoid the raw
+    // sequence to be passed through.
+    else if ((arg[0] == 27 && argc == 3 && trail == '~')
 		|| (argc == 2 && trail == 'u'))
-	    && arg[1] <= 16)
     {
 	return len + handle_key_with_modifier(arg, trail,
-			    csi_len, offset, buf, bufsize, buflen);
+					csi_len, offset, buf, bufsize, buflen);
     }
 
-    // Key without modifier (bad Kitty may send this):
+    // Key without modifier (Kitty sends this for Esc):
     //	{lead}{key}u
     else if (argc == 1 && trail == 'u')
     {
@@ -5177,25 +5393,27 @@ handle_osc(char_u *tp, char_u *argp, int len, char_u *key_name, int *slen)
 		    char_u *tp_r = tp + j + 7;
 		    char_u *tp_g = tp + j + (is_4digit ? 12 : 10);
 		    char_u *tp_b = tp + j + (is_4digit ? 17 : 13);
-# ifdef FEAT_TERMINAL
+#if defined(FEAT_TERMRESPONSE) && defined(FEAT_TERMINAL)
 		    int rval, gval, bval;
 
 		    rval = hexhex2nr(tp_r);
 		    gval = hexhex2nr(tp_b);
 		    bval = hexhex2nr(tp_g);
-# endif
+#endif
 		    if (is_bg)
 		    {
 			char *new_bg_val = (3 * '6' < *tp_r + *tp_g +
 					     *tp_b) ? "light" : "dark";
 
 			LOG_TR(("Received RBG response: %s", tp));
+#ifdef FEAT_TERMRESPONSE
 			rbg_status.tr_progress = STATUS_GOT;
 # ifdef FEAT_TERMINAL
 			bg_r = rval;
 			bg_g = gval;
 			bg_b = bval;
 # endif
+#endif
 			if (!option_was_set((char_u *)"bg")
 				      && STRCMP(p_bg, new_bg_val) != 0)
 			{
@@ -5206,7 +5424,7 @@ handle_osc(char_u *tp, char_u *argp, int len, char_u *key_name, int *slen)
 			    redraw_asap(UPD_CLEAR);
 			}
 		    }
-# ifdef FEAT_TERMINAL
+#if defined(FEAT_TERMRESPONSE) && defined(FEAT_TERMINAL)
 		    else
 		    {
 			LOG_TR(("Received RFG response: %s", tp));
@@ -5215,17 +5433,17 @@ handle_osc(char_u *tp, char_u *argp, int len, char_u *key_name, int *slen)
 			fg_g = gval;
 			fg_b = bval;
 		    }
-# endif
+#endif
 		}
 
 		// got finished code: consume it
 		key_name[0] = (int)KS_EXTRA;
 		key_name[1] = (int)KE_IGNORE;
 		*slen = i + 1 + (tp[i] == ESC);
-# ifdef FEAT_EVAL
+#ifdef FEAT_EVAL
 		set_vim_var_string(is_bg ? VV_TERMRBGRESP
 						  : VV_TERMRFGRESP, tp, *slen);
-# endif
+#endif
 		break;
 	    }
     if (i == len)
@@ -5273,9 +5491,11 @@ handle_dcs(char_u *tp, char_u *argp, int len, char_u *key_name, int *slen)
 	    if ((tp[i] == ESC && i + 1 < len && tp[i + 1] == '\\')
 		    || tp[i] == STERM)
 	    {
+#ifdef FEAT_TERMRESPONSE
 		// handle a key code response, drop a resource response
 		if (i - j >= 3 && argp[2] == 'r')
 		    got_code_from_term(tp + j, i);
+#endif
 		key_name[0] = (int)KS_EXTRA;
 		key_name[1] = (int)KE_IGNORE;
 		*slen = i + 1 + (tp[i] == ESC);
@@ -5298,8 +5518,9 @@ handle_dcs(char_u *tp, char_u *argp, int len, char_u *key_name, int *slen)
 	    if (i - j == 6 && tp[i] != ESC && tp[i] != STERM)
 		break;
 	    if ((i - j == 6 && tp[i] == STERM)
-	     || (i - j == 7 && tp[i] == '\\'))
+		    || (i - j == 7 && tp[i] == '\\'))
 	    {
+#ifdef FEAT_TERMRESPONSE
 		int number = argp[3] - '0';
 
 		// 0, 1 = block blink, 2 = block
@@ -5312,14 +5533,15 @@ handle_dcs(char_u *tp, char_u *argp, int len, char_u *key_name, int *slen)
 		initial_cursor_shape_blink =
 				       (number & 1) ? FALSE : TRUE;
 		rcs_status.tr_progress = STATUS_GOT;
+#endif
 		LOG_TR(("Received cursor shape response: %s", tp));
 
 		key_name[0] = (int)KS_EXTRA;
 		key_name[1] = (int)KE_IGNORE;
 		*slen = i + 1;
-# ifdef FEAT_EVAL
+#ifdef FEAT_EVAL
 		set_vim_var_string(VV_TERMSTYLERESP, tp, *slen);
-# endif
+#endif
 		break;
 	    }
 	}
@@ -5334,7 +5556,6 @@ handle_dcs(char_u *tp, char_u *argp, int len, char_u *key_name, int *slen)
     }
     return OK;
 }
-#endif // FEAT_TERMRESPONSE
 
 /*
  * Check if typebuf.tb_buf[] contains a terminal key code.
@@ -5456,6 +5677,23 @@ check_termcode(
 	}
 	else
 #endif // FEAT_GUI
+#ifdef MSWIN
+	    if (len >= 3 && tp[0] == CSI && tp[1] == KS_EXTRA
+		    && (tp[2] == KE_MOUSEUP
+			|| tp[2] == KE_MOUSEDOWN
+			|| tp[2] == KE_MOUSELEFT
+			|| tp[2] == KE_MOUSERIGHT))
+	{
+	    // MS-Windows console sends mouse scroll events encoded:
+	    // - CSI
+	    // - KS_EXTRA
+	    // - {KE_MOUSE[UP|DOWN|LEFT|RIGHT]}
+	    slen = 3;
+	    key_name[0] = tp[1];
+	    key_name[1] = tp[2];
+	}
+	else
+#endif
 	{
 	    int  mouse_index_found = -1;
 
@@ -5618,17 +5856,16 @@ check_termcode(
 	    }
 	}
 
-#ifdef FEAT_TERMRESPONSE
 	if (key_name[0] == NUL
 	    // Mouse codes of DEC and pterm start with <ESC>[.  When
 	    // detecting the start of these mouse codes they might as well be
 	    // another key code or terminal response.
-# ifdef FEAT_MOUSE_DEC
+#ifdef FEAT_MOUSE_DEC
 	    || key_name[0] == KS_DEC_MOUSE
-# endif
-# ifdef FEAT_MOUSE_PTERM
+#endif
+#ifdef FEAT_MOUSE_PTERM
 	    || key_name[0] == KS_PTERM_MOUSE
-# endif
+#endif
 	   )
 	{
 	    char_u *argp = tp[0] == ESC ? tp + 2 : tp + 1;
@@ -5640,6 +5877,8 @@ check_termcode(
 	     * - Xterm version string: {lead}>{x};{vers};{y}c
 	     *   Also eat other possible responses to t_RV, rxvt returns
 	     *   "{lead}?1;2c".
+	     *
+	     * - Response to XTQMODKEYS: "{lead} > 4 ; Pv m".
 	     *
 	     * - Cursor position report: {lead}{row};{col}R
 	     *   The final byte must be 'R'. It is used for checking the
@@ -5659,10 +5898,10 @@ check_termcode(
 					     bufsize, buflen, key_name, &slen);
 		if (resp != 0)
 		{
-# ifdef DEBUG_TERMRESPONSE
+#ifdef DEBUG_TERMRESPONSE
 		    if (resp == -1)
 			LOG_TR(("Not enough characters for CSI sequence"));
-# endif
+#endif
 		    return resp;
 		}
 	    }
@@ -5688,19 +5927,21 @@ check_termcode(
 		    return -1;
 	    }
 	}
-#endif
 
 	if (key_name[0] == NUL)
 	    continue;	    // No match at this position, try next one
 
 	// We only get here when we have a complete termcode match
 
-#ifdef FEAT_GUI
+#if defined(FEAT_GUI) || defined(MSWIN)
 	/*
-	 * Only in the GUI: Fetch the pointer coordinates of the scroll event
-	 * so that we know which window to scroll later.
+	 * For scroll events from the GUI or MS-Windows console, fetch the
+	 * pointer coordinates so that we know which window to scroll later.
 	 */
-	if (gui.in_use
+	if (TRUE
+# if defined(FEAT_GUI) && !defined(MSWIN)
+		&& gui.in_use
+# endif
 		&& key_name[0] == (int)KS_EXTRA
 		&& (key_name[1] == (int)KE_X1MOUSE
 		    || key_name[1] == (int)KE_X2MOUSE

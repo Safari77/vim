@@ -330,7 +330,7 @@ edit(
 
 	// Disable modifyOtherKeys, keys with modifiers would cause exiting
 	// Insert mode.
-	out_str(T_CTE);
+	out_str_t_TE();
     }
 
     /*
@@ -1510,7 +1510,7 @@ ins_redraw(int ready)	    // not busy with something
     }
 
     if (ready)
-	may_trigger_winscrolled();
+	may_trigger_win_scrolled_resized();
 
     // Trigger SafeState if nothing is pending.
     may_trigger_safestate(ready

@@ -977,8 +977,19 @@ EXTERN win_T	*prevwin INIT(= NULL);	// previous window
 
 EXTERN win_T	*curwin;	// currently active window
 
-EXTERN win_T	*aucmd_win;	// window used in aucmd_prepbuf()
-EXTERN int	aucmd_win_used INIT(= FALSE);	// aucmd_win is being used
+// When executing autocommands for a buffer that is not in any window, a
+// special window is created to handle the side effects.  When autocommands
+// nest we may need more than one.  Allow for up to five, if more are needed
+// something crazy is happening.
+#define AUCMD_WIN_COUNT 5
+
+typedef struct {
+  win_T	*auc_win;	// Window used in aucmd_prepbuf().  When not NULL the
+			// window has been allocated.
+  int	auc_win_used;	// This auc_win is being used.
+} aucmdwin_T;
+
+EXTERN aucmdwin_T aucmd_win[AUCMD_WIN_COUNT];
 
 #ifdef FEAT_PROP_POPUP
 EXTERN win_T    *first_popupwin;		// first global popup window
@@ -1374,8 +1385,46 @@ EXTERN int reg_executing INIT(= 0);	// register being executed or zero
 EXTERN int pending_end_reg_executing INIT(= 0);
 
 // Set when a modifyOtherKeys sequence was seen, then simplified mappings will
-// no longer be used.
+// no longer be used.  To be combined with modify_otherkeys_state.
 EXTERN int seenModifyOtherKeys INIT(= FALSE);
+
+// The state for the modifyOtherKeys level
+typedef enum {
+    // Initially we have no clue if the protocol is on or off.
+    MOKS_INITIAL,
+    // Used when receiving the state and the level is not two.
+    MOKS_OFF,
+    // Used when receiving the state and the level is two.
+    MOKS_ENABLED,
+    // Used after outputting t_KE when the state was MOKS_ENABLED.  We do not
+    // really know if t_KE actually disabled the protocol, the following t_KI
+    // is expected to request the state, but the response may come only later.
+    MOKS_DISABLED,
+    // Used after outputting t_KE when the state was not MOKS_ENABLED.
+    MOKS_AFTER_T_KE,
+} mokstate_T;
+
+// Set when a response to XTQMODKEYS was received.  Only works for xterm
+// version 377 and later.
+EXTERN mokstate_T modify_otherkeys_state INIT(= MOKS_INITIAL);
+
+// The state for the Kitty keyboard protocol.
+typedef enum {
+    // Initially we have no clue if the protocol is on or off.
+    KKPS_INITIAL,
+    // Used when receiving the state and the flags are zero.
+    KKPS_OFF,
+    // Used when receiving the state and the flags are non-zero.
+    KKPS_ENABLED,
+    // Used after outputting t_KE when the state was KKPS_ENABLED.  We do not
+    // really know if t_KE actually disabled the protocol, the following t_KI
+    // is expected to request the state, but the response may come only later.
+    KKPS_DISABLED,
+    // Used after outputting t_KE when the state was not KKPS_ENABLED.
+    KKPS_AFTER_T_KE,
+} kkpstate_T;
+
+EXTERN kkpstate_T kitty_protocol_state INIT(= KKPS_INITIAL);
 
 EXTERN int no_mapping INIT(= FALSE);	// currently no mapping allowed
 EXTERN int no_zero_mapping INIT(= 0);	// mapping zero not allowed
