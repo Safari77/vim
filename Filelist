@@ -88,10 +88,11 @@ SRC_ALL =	\
 		src/job.c \
 		src/json.c \
 		src/json_test.c \
+		src/keymap.h \
 		src/kword_test.c \
 		src/list.c \
 		src/locale.c \
-		src/keymap.h \
+		src/logfile.c \
 		src/macros.h \
 		src/main.c \
 		src/map.c \
@@ -274,6 +275,7 @@ SRC_ALL =	\
 		src/proto/json.pro \
 		src/proto/list.pro \
 		src/proto/locale.pro \
+		src/proto/logfile.pro \
 		src/proto/main.pro \
 		src/proto/map.pro \
 		src/proto/mark.pro \
