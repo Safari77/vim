@@ -2,6 +2,7 @@
 
 source check.vim
 source term_util.vim
+source shared.vim
 
 func CheckSuspended(buf, fileExists)
   call WaitForAssert({-> assert_match('[$#] $', term_getline(a:buf, '.'))})
@@ -20,6 +21,12 @@ endfunc
 func Test_suspend()
   CheckFeature terminal
   CheckExecutable /bin/sh
+
+  " Somehow the modifyOtherKeys response may get to the terminal when using Mac
+  " OS.  Make t_RK empty to avoid that.
+  set t_RK=
+
+  call WaitForResponses()
 
   let buf = term_start('/bin/sh')
   " Wait for shell prompt.
@@ -64,6 +71,12 @@ endfunc
 func Test_suspend_autocmd()
   CheckFeature terminal
   CheckExecutable /bin/sh
+
+  " Somehow the modifyOtherKeys response may get to the terminal when using Mac
+  " OS.  Make t_RK empty to avoid that.
+  set t_RK=
+
+  call WaitForResponses()
 
   let buf = term_start('/bin/sh', #{term_rows: 6})
   " Wait for shell prompt.
