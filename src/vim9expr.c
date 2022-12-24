@@ -235,6 +235,8 @@ compile_member(int is_slice, int *keeping_dict, cctx_T *cctx)
 	    case VAR_JOB:
 	    case VAR_CHANNEL:
 	    case VAR_INSTR:
+	    case VAR_CLASS:
+	    case VAR_OBJECT:
 	    case VAR_UNKNOWN:
 	    case VAR_ANY:
 	    case VAR_VOID:
@@ -246,6 +248,61 @@ compile_member(int is_slice, int *keeping_dict, cctx_T *cctx)
 	return FAIL;
     }
     return OK;
+}
+
+/*
+ * Compile ".member" coming after an object or class.
+ */
+    static int
+compile_class_object_index(cctx_T *cctx, char_u **arg, type_T *type)
+{
+    if (VIM_ISWHITE((*arg)[1]))
+    {
+	semsg(_(e_no_white_space_allowed_after_str_str), ".", *arg);
+	return FAIL;
+    }
+
+    ++*arg;
+    char_u *name = *arg;
+    char_u *name_end = find_name_end(name, NULL, NULL, FNE_CHECK_START);
+    if (name_end == name)
+	return FAIL;
+    size_t len = name_end - name;
+
+    class_T *cl = (class_T *)type->tt_member;
+    if (*name_end == '(')
+    {
+	// TODO
+    }
+    else if (type->tt_type == VAR_OBJECT)
+    {
+	for (int i = 0; i < cl->class_obj_member_count; ++i)
+	{
+	    ocmember_T *m = &cl->class_obj_members[i];
+	    if (STRNCMP(name, m->ocm_name, len) == 0 && m->ocm_name[len] == NUL)
+	    {
+		if (*name == '_' && cctx->ctx_ufunc->uf_class != cl)
+		{
+		    semsg(_(e_cannot_access_private_member_str), m->ocm_name);
+		    return FAIL;
+		}
+
+		generate_GET_OBJ_MEMBER(cctx, i, m->ocm_type);
+
+		*arg = name_end;
+		return OK;
+	    }
+	}
+
+	semsg(_(e_member_not_found_on_object_str_str), cl->class_name, name);
+    }
+    else
+    {
+	// TODO: class member
+	emsg("compile_class_object_index(): not handled");
+    }
+
+    return FAIL;
 }
 
 /*
@@ -1795,6 +1852,7 @@ compile_subscript(
     for (;;)
     {
 	char_u *p = skipwhite(*arg);
+	type_T *type;
 
 	if (*p == NUL || (VIM_ISWHITE(**arg) && vim9_comment_start(p)))
 	{
@@ -1822,7 +1880,6 @@ compile_subscript(
 	// is not a function call.
 	if (**arg == '(')
 	{
-	    type_T	*type;
 	    int		argcount = 0;
 
 	    if (generate_ppconst(cctx, ppconst) == FAIL)
@@ -1909,7 +1966,6 @@ compile_subscript(
 		int	    argcount = 1;
 		garray_T    *stack = &cctx->ctx_type_stack;
 		int	    type_idx_start = stack->ga_len;
-		type_T	    *type;
 		int	    expr_isn_start = cctx->ctx_instr.ga_len;
 		int	    expr_isn_end;
 		int	    arg_isn_count;
@@ -2093,6 +2149,18 @@ compile_subscript(
 		    return FAIL;
 	    }
 	    if (compile_member(is_slice, &keeping_dict, cctx) == FAIL)
+		return FAIL;
+	}
+	else if (*p == '.'
+		&& (type = get_type_on_stack(cctx, 0)) != &t_unknown
+		&& (type->tt_type == VAR_CLASS || type->tt_type == VAR_OBJECT))
+	{
+	    // class member: SomeClass.varname
+	    // class method: SomeClass.SomeMethod()
+	    // class constructor: SomeClass.new()
+	    // object member: someObject.varname, this.varname
+	    // object method: someObject.SomeMethod(), this.SomeMethod()
+	    if (compile_class_object_index(cctx, arg, type) == FAIL)
 		return FAIL;
 	}
 	else if (*p == '.' && p[1] != '.')
