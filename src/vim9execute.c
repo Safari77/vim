@@ -377,6 +377,41 @@ get_pt_outer(partial_T *pt)
 }
 
 /*
+ * Check "argcount" arguments on the stack against what "ufunc" expects.
+ * "off" is the offset of arguments on the stack.
+ * Return OK or FAIL.
+ */
+    static int
+check_ufunc_arg_types(ufunc_T *ufunc, int argcount, int off, ectx_T *ectx)
+{
+    if (ufunc->uf_arg_types != NULL || ufunc->uf_va_type != NULL)
+    {
+	typval_T	*argv = STACK_TV_BOT(0) - argcount - off;
+
+	// The function can change at runtime, check that the argument
+	// types are correct.
+	for (int i = 0; i < argcount; ++i)
+	{
+	    type_T *type = NULL;
+
+	    // assume a v:none argument, using the default value, is always OK
+	    if (argv[i].v_type == VAR_SPECIAL
+					 && argv[i].vval.v_number == VVAL_NONE)
+		continue;
+
+	    if (i < ufunc->uf_args.ga_len && ufunc->uf_arg_types != NULL)
+		type = ufunc->uf_arg_types[i];
+	    else if (ufunc->uf_va_type != NULL)
+		type = ufunc->uf_va_type->tt_member;
+	    if (type != NULL && check_typval_arg_type(type,
+					    &argv[i], NULL, i + 1) == FAIL)
+		return FAIL;
+	}
+    }
+    return OK;
+}
+
+/*
  * Call compiled function "cdf_idx" from compiled code.
  * This adds a stack frame and sets the instruction pointer to the start of the
  * called function.
@@ -497,6 +532,10 @@ call_dfunc(
 			missing), missing);
 	return FAIL;
     }
+
+    // Check the argument types.
+    if (check_ufunc_arg_types(ufunc, argcount, vararg_count, ectx) == FAIL)
+	return FAIL;
 
     // Reserve space for:
     // - missing arguments
@@ -1345,26 +1384,8 @@ call_by_name(
 
     if (ufunc != NULL)
     {
-	if (ufunc->uf_arg_types != NULL || ufunc->uf_va_type != NULL)
-	{
-	    int i;
-	    typval_T	*argv = STACK_TV_BOT(0) - argcount;
-
-	    // The function can change at runtime, check that the argument
-	    // types are correct.
-	    for (i = 0; i < argcount; ++i)
-	    {
-		type_T *type = NULL;
-
-		if (i < ufunc->uf_args.ga_len && ufunc->uf_arg_types != NULL)
-		    type = ufunc->uf_arg_types[i];
-		else if (ufunc->uf_va_type != NULL)
-		    type = ufunc->uf_va_type->tt_member;
-		if (type != NULL && check_typval_arg_type(type,
-						&argv[i], NULL, i + 1) == FAIL)
-		    return FAIL;
-	    }
-	}
+	if (check_ufunc_arg_types(ufunc, argcount, 0, ectx) == FAIL)
+	    return FAIL;
 
 	return call_ufunc(ufunc, NULL, argcount, ectx, iptr, selfdict);
     }
@@ -3799,7 +3820,7 @@ exec_instructions(ectx_T *ectx)
 		tv->vval.v_number = iptr->isn_arg.storenr.stnr_val;
 		break;
 
-	    // store value in list or dict variable
+	    // Store a value in a list, dict, blob or object variable.
 	    case ISN_STOREINDEX:
 		{
 		    int res = execute_storeindex(iptr, ectx);
@@ -5159,7 +5180,7 @@ exec_instructions(ectx_T *ectx)
 		    object_T *obj = tv->vval.v_object;
 		    // the members are located right after the object struct
 		    typval_T *mtv = ((typval_T *)(obj + 1)) + idx;
-		    *tv = *mtv;
+		    copy_tv(mtv, tv);
 
 		    // Unreference the object after getting the member, it may
 		    // be freed.
@@ -6872,16 +6893,23 @@ list_instructions(char *pfx, isn_T *instr, int instr_count, ufunc_T *ufunc)
 	    case ISN_CHECKTYPE:
 		  {
 		      checktype_T   *ct = &iptr->isn_arg.type;
-		      char	    *tofree;
+		      char	    *tofree = NULL;
+		      char	    *typename;
+
+		      if (ct->ct_type->tt_type == VAR_FLOAT
+			      && (ct->ct_type->tt_flags & TTFLAG_NUMBER_OK))
+			  typename = "float|number";
+		      else
+			  typename = type_name(ct->ct_type, &tofree);
 
 		      if (ct->ct_arg_idx == 0)
 			  smsg("%s%4d CHECKTYPE %s stack[%d]", pfx, current,
-					  type_name(ct->ct_type, &tofree),
+					  typename,
 					  (int)ct->ct_off);
 		      else
 			  smsg("%s%4d CHECKTYPE %s stack[%d] %s %d",
 					  pfx, current,
-					  type_name(ct->ct_type, &tofree),
+					  typename,
 					  (int)ct->ct_off,
 					  ct->ct_is_var ? "var": "arg",
 					  (int)ct->ct_arg_idx);
