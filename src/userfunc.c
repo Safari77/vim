@@ -525,9 +525,9 @@ parse_argument_types(ufunc_T *fp, garray_T *argtypes, int varargs)
 
 	// Move the last argument "...name: type" to uf_va_name and
 	// uf_va_type.
-	fp->uf_va_name = ((char_u **)fp->uf_args.ga_data)
-					      [fp->uf_args.ga_len - 1];
 	--fp->uf_args.ga_len;
+	fp->uf_va_name = ((char_u **)fp->uf_args.ga_data)[fp->uf_args.ga_len];
+	((char_u **)fp->uf_args.ga_data)[fp->uf_args.ga_len] = NULL;
 	p = ((char_u **)argtypes->ga_data)[len];
 	if (p == NULL)
 	    // TODO: get type from default value
@@ -4599,7 +4599,8 @@ define_function(
 	    if (!aborting())
 	    {
 		if (!eap->skip && fudi.fd_newkey != NULL)
-		    semsg(_(e_key_not_present_in_dictionary), fudi.fd_newkey);
+		    semsg(_(e_key_not_present_in_dictionary_str),
+							       fudi.fd_newkey);
 		vim_free(fudi.fd_newkey);
 		return NULL;
 	    }
@@ -4786,7 +4787,7 @@ define_function(
     // invalid.
     ++p;
     if (get_function_args(&p, ')', &newargs,
-			eap->cmdidx == CMD_def ? &argtypes : NULL, FALSE,
+			 eap->cmdidx == CMD_def ? &argtypes : NULL, FALSE,
 			 NULL, &varargs, &default_args, eap->skip,
 			 eap, in_class, &newlines, lines_to_free) == FAIL)
 	goto errret_2;
@@ -4847,7 +4848,7 @@ define_function(
 		p += 7;
 		if (current_funccal == NULL)
 		{
-		    emsg_funcname(e_closure_function_should_not_be_at_top_level,
+		    emsg_funcname(e_closure_function_should_not_be_at_top_level_str,
 			    name == NULL ? (char_u *)"" : name);
 		    goto erret;
 		}
@@ -5208,17 +5209,23 @@ define_function(
     goto ret_free;
 
 erret:
-    ga_clear_strings(&newargs);
-    ga_clear_strings(&default_args);
     if (fp != NULL)
     {
+	// these were set to "newargs" and "default_args", which are cleared
+	// below
 	ga_init(&fp->uf_args);
 	ga_init(&fp->uf_def_args);
     }
 errret_2:
+    ga_clear_strings(&newargs);
+    ga_clear_strings(&default_args);
     ga_clear_strings(&newlines);
     if (fp != NULL)
+    {
 	VIM_CLEAR(fp->uf_arg_types);
+	VIM_CLEAR(fp->uf_va_name);
+	clear_type_list(&fp->uf_type_list);
+    }
     if (free_fp)
     {
 	vim_free(fp);
@@ -6058,7 +6065,7 @@ ex_call(exarg_T *eap)
     if (fudi.fd_newkey != NULL)
     {
 	// Still need to give an error message for missing key.
-	semsg(_(e_key_not_present_in_dictionary), fudi.fd_newkey);
+	semsg(_(e_key_not_present_in_dictionary_str), fudi.fd_newkey);
 	vim_free(fudi.fd_newkey);
     }
     if (tofree == NULL)

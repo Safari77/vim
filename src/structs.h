@@ -1493,9 +1493,9 @@ struct class_S
     ocmember_T	*class_class_members;	// allocated
     typval_T	*class_members_tv;	// allocated array of class member vals
 
-    // class methods: "static def SomeMethod()"
-    int		class_class_method_count;
-    ufunc_T	**class_class_methods;	// allocated
+    // class functions: "static def SomeMethod()"
+    int		class_class_function_count;
+    ufunc_T	**class_class_functions;	// allocated
 
     // object members: "this.varname"
     int		class_obj_member_count;
@@ -1822,8 +1822,8 @@ struct ufunc_S
 				// copy_lambda_to_global_func()
 #define FC_LAMBDA   0x2000	// one line "return {expr}"
 
-#define FC_OBJECT   010000	// object method
-#define FC_NEW	    030000	// constructor (also an object method)
+#define FC_OBJECT   0x4000	// object method
+#define FC_NEW	    0x8000	// constructor
 
 #define MAX_FUNC_ARGS	20	// maximum number of function arguments
 #define VAR_SHORT_LEN	20	// short variable name length

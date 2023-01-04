@@ -254,11 +254,11 @@ check_number_or_float(vartype_T type1, vartype_T type2, char_u *op)
  */
     int
 generate_add_instr(
-	cctx_T *cctx,
-	vartype_T vartype,
-	type_T *type1,
-	type_T *type2,
-	exprtype_T expr_type)
+	cctx_T	    *cctx,
+	vartype_T   vartype,
+	type_T	    *type1,
+	type_T	    *type2,
+	exprtype_T  expr_type)
 {
     isn_T	*isn = generate_instr_drop(cctx,
 		      vartype == VAR_NUMBER ? ISN_OPNR
@@ -416,6 +416,8 @@ get_compare_isn(
 	    case VAR_LIST: isntype = ISN_COMPARELIST; break;
 	    case VAR_DICT: isntype = ISN_COMPAREDICT; break;
 	    case VAR_FUNC: isntype = ISN_COMPAREFUNC; break;
+	    case VAR_CLASS: isntype = ISN_COMPARECLASS; break;
+	    case VAR_OBJECT: isntype = ISN_COMPAREOBJECT; break;
 	    default: isntype = ISN_COMPAREANY; break;
 	}
     }
@@ -453,6 +455,13 @@ get_compare_isn(
     {
 	semsg(_(e_cannot_use_str_with_str),
 		exprtype == EXPR_IS ? "is" : "isnot" , vartype_name(vartype1));
+	return ISN_DROP;
+    }
+    if (!(exprtype == EXPR_IS || exprtype == EXPR_ISNOT
+		|| exprtype == EXPR_EQUAL || exprtype == EXPR_NEQUAL)
+	    && (isntype == ISN_COMPAREOBJECT || isntype == ISN_COMPARECLASS))
+    {
+	semsg(_(e_invalid_operation_for_str), vartype_name(vartype1));
 	return ISN_DROP;
     }
     if (isntype == ISN_DROP
@@ -1832,7 +1841,13 @@ check_func_args_from_type(
 		type_T	*expected;
 
 		if (varargs && i >= type->tt_argcount - 1)
-		    expected = type->tt_args[type->tt_argcount - 1]->tt_member;
+		{
+		    expected = type->tt_args[type->tt_argcount - 1];
+		    if (expected != NULL && expected->tt_type == VAR_LIST)
+			expected = expected->tt_member;
+		    if (expected == NULL)
+			expected = &t_any;
+		}
 		else if (i >= type->tt_min_argcount
 					     && actual->tt_type == VAR_SPECIAL)
 		    expected = &t_any;
@@ -2512,12 +2527,14 @@ delete_instr(isn_T *isn)
 	case ISN_COMPAREANY:
 	case ISN_COMPAREBLOB:
 	case ISN_COMPAREBOOL:
+	case ISN_COMPARECLASS:
 	case ISN_COMPAREDICT:
 	case ISN_COMPAREFLOAT:
 	case ISN_COMPAREFUNC:
 	case ISN_COMPARELIST:
 	case ISN_COMPARENR:
 	case ISN_COMPARENULL:
+	case ISN_COMPAREOBJECT:
 	case ISN_COMPARESPECIAL:
 	case ISN_COMPARESTRING:
 	case ISN_CONCAT:
