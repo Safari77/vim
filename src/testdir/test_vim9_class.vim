@@ -155,6 +155,11 @@ def Test_class_basic()
 
       # call an object method
       assert_equal('(2, 12)', pos.ToString())
+
+      assert_equal(v:t_class, type(TextPosition))
+      assert_equal(v:t_object, type(pos))
+      assert_equal('class<TextPosition>', typename(TextPosition))
+      assert_equal('object<TextPosition>', typename(pos))
   END
   v9.CheckScriptSuccess(lines)
 enddef
@@ -455,6 +460,24 @@ def Test_object_type()
       var o: One = Two.new()
   END
   v9.CheckScriptFailure(lines, 'E1012: Type mismatch; expected object<One> but got object<Two>')
+
+  lines =<< trim END
+      vim9script
+
+      interface One
+        def GetMember(): number
+      endinterface
+      class Two implements One
+        this.one = 1
+        def GetMember(): number
+          return this.one
+        enddef
+      endclass
+
+      var o: One = Two.new(5)
+      assert_equal(5, o.GetMember())
+  END
+  v9.CheckScriptSuccess(lines)
 enddef
 
 def Test_class_member()
@@ -616,8 +639,17 @@ def Test_interface_basics()
         def Method(count: number)
       endinterface
   END
-  # TODO: this should give an error for "count" shadowing
-  v9.CheckScriptSuccess(lines)
+  v9.CheckScriptFailure(lines, 'E1340: Argument already declared in the class: count')
+
+  lines =<< trim END
+      vim9script
+
+      interface Some
+        this.value: number
+        def Method(value: number)
+      endinterface
+  END
+  v9.CheckScriptFailure(lines, 'E1340: Argument already declared in the class: value')
 
   lines =<< trim END
       vim9script
@@ -954,6 +986,67 @@ def Test_class_extends()
       assert_equal('Base class: 42', o.ToString())
   END
   v9.CheckScriptSuccess(lines)
+enddef
+
+def Test_class_import()
+  var lines =<< trim END
+      vim9script
+      export class Animal
+        this.kind: string
+        this.name: string
+      endclass
+  END
+  writefile(lines, 'Xanimal.vim', 'D')
+
+  lines =<< trim END
+      vim9script
+      import './Xanimal.vim' as animal
+
+      var a: animal.Animal
+      a = animal.Animal.new('fish', 'Eric')
+      assert_equal('fish', a.kind)
+      assert_equal('Eric', a.name)
+
+      var b: animal.Animal = animal.Animal.new('cat', 'Garfield')
+      assert_equal('cat', b.kind)
+      assert_equal('Garfield', b.name)
+  END
+  v9.CheckScriptSuccess(lines)
+enddef
+
+def Test_abstract_class()
+  var lines =<< trim END
+      vim9script
+      abstract class Base
+        this.name: string
+      endclass
+      class Person extends Base
+        this.age: number
+      endclass
+      var p: Base = Person.new('Peter', 42)
+      assert_equal('Peter', p.name)
+      assert_equal(42, p.age)
+  END
+  v9.CheckScriptSuccess(lines)
+
+  lines =<< trim END
+      vim9script
+      abstract class Base
+        this.name: string
+      endclass
+      class Person extends Base
+        this.age: number
+      endclass
+      var p = Base.new('Peter')
+  END
+  v9.CheckScriptFailure(lines, 'E1325: Method not found on class "Base": new(')
+
+  lines =<< trim END
+      abstract class Base
+        this.name: string
+      endclass
+  END
+  v9.CheckScriptFailure(lines, 'E1316:')
 enddef
 
 
