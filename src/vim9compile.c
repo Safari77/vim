@@ -66,6 +66,7 @@ lookup_local(char_u *name, size_t len, lvar_T *lvar, cctx_T *cctx)
 	if (lvar != NULL)
 	{
 	    CLEAR_POINTER(lvar);
+	    lvar->lv_loop_depth = -1;
 	    lvar->lv_name = (char_u *)(is_super ? "super" : "this");
 	    if (cctx->ctx_ufunc->uf_class != NULL)
 	    {
@@ -2044,6 +2045,23 @@ compile_load_lhs(
     int
 compile_load_lhs_with_index(lhs_T *lhs, char_u *var_start, cctx_T *cctx)
 {
+    if (lhs->lhs_type->tt_type == VAR_OBJECT)
+    {
+	// "this.value": load "this" object and get the value at index
+	// for an object or class member get the type of the member
+	class_T *cl = (class_T *)lhs->lhs_type->tt_member;
+	type_T *type = class_member_type(cl, var_start + 5,
+					   lhs->lhs_end, &lhs->lhs_member_idx);
+	if (lhs->lhs_member_idx < 0)
+	    return FAIL;
+
+	if (generate_LOAD(cctx, ISN_LOAD, 0, NULL, lhs->lhs_type) == FAIL)
+	    return FAIL;
+	if (cl->class_flags & CLASS_INTERFACE)
+	    return generate_GET_ITF_MEMBER(cctx, cl, lhs->lhs_member_idx, type);
+	return generate_GET_OBJ_MEMBER(cctx, lhs->lhs_member_idx, type);
+    }
+
     compile_load_lhs(lhs, var_start, NULL, cctx);
 
     if (lhs->lhs_has_index)
@@ -2161,7 +2179,22 @@ compile_assign_unlet(
 
 		if (isn == NULL)
 		    return FAIL;
-		isn->isn_arg.vartype = dest_type;
+		isn->isn_arg.storeindex.si_vartype = dest_type;
+		isn->isn_arg.storeindex.si_class = NULL;
+
+		if (dest_type == VAR_OBJECT)
+		{
+		    class_T *cl = (class_T *)lhs->lhs_type->tt_member;
+
+		    if (cl->class_flags & CLASS_INTERFACE)
+		    {
+			// "this.value": load "this" object and get the value
+			// at index for an object or class member get the type
+			// of the member
+			isn->isn_arg.storeindex.si_class = cl;
+			++cl->class_refcount;
+		    }
+		}
 	    }
 	}
 	else if (range)
