@@ -629,6 +629,9 @@ au BufNewFile,BufRead *.elm			setf elm
 " Elm Filter Rules file
 au BufNewFile,BufRead filter-rules		setf elmfilt
 
+" Elsa - https://github.com/ucsd-progsys/elsa
+au BufNewFile,BufRead *.lc			setf elsa
+
 " ESMTP rc file
 au BufNewFile,BufRead *esmtprc			setf esmtprc
 
@@ -1029,6 +1032,9 @@ au BufNewFile,BufRead *.jsonnet,*.libsonnet	setf jsonnet
 " Julia
 au BufNewFile,BufRead *.jl			setf julia
 
+" KDL
+au BufNewFile,BufRead *.kdl			setf kdl
+
 " Kixtart
 au BufNewFile,BufRead *.kix			setf kix
 
@@ -1399,6 +1405,7 @@ au BufNewFile,BufRead pf.conf				setf pf
 " ini style config files, using # comments
 au BufNewFile,BufRead */etc/pacman.conf,mpv.conf	setf confini
 au BufNewFile,BufRead */.aws/config,*/.aws/credentials	setf confini
+au BufNewFile,BufRead *.nmconnection			setf confini
 
 " Pacman hooks
 au BufNewFile,BufRead *.hook
