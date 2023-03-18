@@ -2462,6 +2462,7 @@ vim_is_iris(char_u *name)
 	    || STRCMP(name, "builtin_iris-ansi") == 0);
 }
 
+#if defined(VMS) || defined(PROTO)
 /*
  * Return TRUE if "name" is a vt300-like terminal name.
  */
@@ -2476,6 +2477,7 @@ vim_is_vt300(char_u *name)
 			     && vim_strchr((char_u *)"12345", name[2]) != NULL)
 	    || STRCMP(name, "builtin_vt320") == 0);
 }
+#endif
 
 /*
  * Insert user name in s[len].
