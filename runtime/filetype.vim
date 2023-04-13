@@ -439,6 +439,9 @@ au BufNewFile,BufRead *.cook			setf cook
 " needs to be inspected.
 au BufNewFile,BufRead *.cql			setf cqlang
 
+" Crystal
+au BufNewFile,BufRead *.cr			setf crystal
+
 " CSV Files
 au BufNewFile,BufRead *.csv			setf csv
 
@@ -649,6 +652,9 @@ au BufNewFile,BufRead filter-rules		setf elmfilt
 
 " Elsa - https://github.com/ucsd-progsys/elsa
 au BufNewFile,BufRead *.lc			setf elsa
+
+" EdgeDB Schema Definition Language
+au BufNewFile,BufRead *.esdl			setf esdl
 
 " ESMTP rc file
 au BufNewFile,BufRead *esmtprc			setf esmtprc
@@ -1106,6 +1112,9 @@ au BufNewFile,BufRead *.ldif			setf ldif
 " Ld loader
 au BufNewFile,BufRead *.ld			setf ld
 
+" Lean
+au BufNewFile,BufRead *.lean			setf lean
+
 " Ledger
 au BufRead,BufNewFile *.ldg,*.ledger,*.journal			setf ledger
 
@@ -1152,6 +1161,9 @@ au BufNewFile,BufRead *.lite,*.lt		setf lite
 
 " LiteStep RC files
 au BufNewFile,BufRead */LiteStep/*/*.rc		setf litestep
+
+" Livebook
+au BufNewFile,BufRead *.livemd			setf livebook
 
 " Login access
 au BufNewFile,BufRead */etc/login.access	setf loginaccess
@@ -1389,6 +1401,9 @@ au BufNewFile,BufRead *.nse			setf lua
 
 " NSIS
 au BufNewFile,BufRead *.nsi,*.nsh		setf nsis
+
+" Nu
+au BufNewFile,BufRead {env,config}.nu		setf nu
 
 " Oblivion Language and Oblivion Script Extender
 au BufNewFile,BufRead *.obl,*.obse,*.oblivion,*.obscript  setf obse
@@ -1798,6 +1813,9 @@ au BufNewFile,BufRead Cargo.lock,*/.cargo/config,*/.cargo/credentials	setf toml
 
 " S-lang (or shader language, or SmallLisp)
 au BufNewFile,BufRead *.sl			setf slang
+
+" Sage
+au BufNewFile,BufRead *.sage			setf sage
 
 " Samba config
 au BufNewFile,BufRead smb.conf			setf samba
@@ -2328,7 +2346,11 @@ au BufNewFile,BufRead *.vroom			setf vroom
 au BufNewFile,BufRead *.vue			setf vue
 
 " WebAssembly
-au BufNewFile,BufRead *.wast,*.wat		setf wast
+au BufNewFile,BufRead *.wat			setf wat
+au BufNewFile,BufRead *.wast		setf wast
+
+" WebAssembly Interface Type (WIT)
+au BufNewFile,BufRead *.wit			setf wit
 
 " Webmacro
 au BufNewFile,BufRead *.wm			setf webmacro

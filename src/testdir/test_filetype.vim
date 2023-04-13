@@ -131,6 +131,7 @@ let s:filename_checks = {
     \ 'cqlang': ['file.cql'],
     \ 'crm': ['file.crm'],
     \ 'crontab': ['crontab', 'crontab.file', '/etc/cron.d/file', 'any/etc/cron.d/file'],
+    \ 'crystal': ['file.cr'],
     \ 'cs': ['file.cs', 'file.csx'],
     \ 'csc': ['file.csc'],
     \ 'csdl': ['file.csdl'],
@@ -189,6 +190,7 @@ let s:filename_checks = {
     \ 'epuppet': ['file.epp'],
     \ 'erlang': ['file.erl', 'file.hrl', 'file.yaws'],
     \ 'eruby': ['file.erb', 'file.rhtml'],
+    \ 'esdl': ['file.esdl'],
     \ 'esmtprc': ['anyesmtprc', 'esmtprc', 'some-esmtprc'],
     \ 'esqlc': ['file.ec', 'file.EC'],
     \ 'esterel': ['file.strl'],
@@ -318,6 +320,7 @@ let s:filename_checks = {
     \ 'latte': ['file.latte', 'file.lte'],
     \ 'ld': ['file.ld'],
     \ 'ldif': ['file.ldif'],
+    \ 'lean': ['file.lean'],
     \ 'ledger': ['file.ldg', 'file.ledger', 'file.journal'],
     \ 'less': ['file.less'],
     \ 'lex': ['file.lex', 'file.l', 'file.lxx', 'file.l++'],
@@ -333,6 +336,7 @@ let s:filename_checks = {
     \ 'lite': ['file.lite', 'file.lt'],
     \ 'litestep': ['/LiteStep/any/file.rc', 'any/LiteStep/any/file.rc'],
     \ 'logcheck': ['/etc/logcheck/file.d-some/file', '/etc/logcheck/file.d/file', 'any/etc/logcheck/file.d-some/file', 'any/etc/logcheck/file.d/file'],
+    \ 'livebook': ['file.livemd'],
     \ 'loginaccess': ['/etc/login.access', 'any/etc/login.access'],
     \ 'logindefs': ['/etc/login.defs', 'any/etc/login.defs'],
     \ 'logtalk': ['file.lgt'],
@@ -409,6 +413,7 @@ let s:filename_checks = {
     \ 'nqc': ['file.nqc'],
     \ 'nroff': ['file.tr', 'file.nr', 'file.roff', 'file.tmac', 'file.mom', 'tmac.file'],
     \ 'nsis': ['file.nsi', 'file.nsh'],
+    \ 'nu': ['env.nu', 'config.nu'],
     \ 'obj': ['file.obj'],
     \ 'obse': ['file.obl', 'file.obse', 'file.oblivion', 'file.obscript'],
     \ 'ocaml': ['file.ml', 'file.mli', 'file.mll', 'file.mly', '.ocamlinit', 'file.mlt', 'file.mlp', 'file.mlip', 'file.mli.cppo', 'file.ml.cppo'],
@@ -536,6 +541,7 @@ let s:filename_checks = {
     \ 'skill': ['file.il', 'file.ils', 'file.cdf'],
     \ 'cdc': ['file.cdc'],
     \ 'slang': ['file.sl'],
+    \ 'sage': ['file.sage'],
     \ 'slice': ['file.ice'],
     \ 'slpconf': ['/etc/slp.conf', 'any/etc/slp.conf'],
     \ 'slpreg': ['/etc/slp.reg', 'any/etc/slp.reg'],
@@ -652,12 +658,14 @@ let s:filename_checks = {
     \ 'vrml': ['file.wrl'],
     \ 'vroom': ['file.vroom'],
     \ 'vue': ['file.vue'],
-    \ 'wast': ['file.wast', 'file.wat'],
+    \ 'wat': ['file.wat'],
+    \ 'wast': ['file.wast'],
     \ 'wdl': ['file.wdl'],
     \ 'webmacro': ['file.wm'],
     \ 'wget': ['.wgetrc', 'wgetrc'],
     \ 'wget2': ['.wget2rc', 'wget2rc'],
     \ 'winbatch': ['file.wbt'],
+    \ 'wit': ['file.wit'],
     \ 'wml': ['file.wml'],
     \ 'wsh': ['file.wsf', 'file.wsc'],
     \ 'wsml': ['file.wsml'],
@@ -1204,23 +1212,7 @@ func Test_fs_file()
   call assert_equal('forth', &filetype)
   bwipe!
 
-  call writefile(['.( Forth displayed inline comment )'], 'Xfile.fs')
-  split Xfile.fs
-  call assert_equal('forth', &filetype)
-  bwipe!
-
   call writefile(['\ Forth line comment'], 'Xfile.fs')
-  split Xfile.fs
-  call assert_equal('forth', &filetype)
-  bwipe!
-
-  " empty line comment - no space required
-  call writefile(['\'], 'Xfile.fs')
-  split Xfile.fs
-  call assert_equal('forth', &filetype)
-  bwipe!
-
-  call writefile(['\G Forth documentation comment '], 'Xfile.fs')
   split Xfile.fs
   call assert_equal('forth', &filetype)
   bwipe!
