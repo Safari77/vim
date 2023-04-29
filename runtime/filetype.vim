@@ -1,7 +1,7 @@
 " Vim support file to detect file types
 "
 " Maintainer:	Bram Moolenaar <Bram@vim.org>
-" Last Change:	2023 Feb 25
+" Last Change:	2023 Mar 28
 
 " Listen very carefully, I will say this only once
 if exists("did_load_filetypes")
@@ -273,6 +273,9 @@ if has("fname_case")
   autocmd BufRead,BufNewFile *.BUILD,BUILD		setf bzl
 endif
 
+" Busted (Lua unit testing framework - configuration files)
+au BufNewFile,BufRead .busted			setf lua
+
 " C or lpc
 au BufNewFile,BufRead *.c			call dist#ft#FTlpc()
 au BufNewFile,BufRead *.lpc,*.ulpc		setf lpc
@@ -337,6 +340,10 @@ au BufNewFile,BufRead *.cxx,*.c++,*.hh,*.hxx,*.hpp,*.ipp,*.moc,*.tcc,*.inl setf 
 if has("fname_case")
   au BufNewFile,BufRead *.C,*.H setf cpp
 endif
+
+" C++ 20 modules (clang)
+" https://clang.llvm.org/docs/StandardCPlusPlusModules.html#file-name-requirement
+au BufNewFile,BufRead *.cppm,*.ccm,*.cxxm,*.c++m setf cpp
 
 " .h files can be C, Ch C++, ObjC or ObjC++.
 " Set c_syntax_for_h if you want C, ch_syntax_for_h if you want Ch. ObjC is
@@ -841,7 +848,7 @@ au BufNewFile,BufRead *.graphql,*.graphqls,*.gql			setf graphql
 au BufNewFile,BufRead *.gretl			setf gretl
 
 " Groovy
-au BufNewFile,BufRead *.gradle,*.groovy		setf groovy
+au BufNewFile,BufRead *.gradle,*.groovy,Jenkinsfile		setf groovy
 
 " GNU Server Pages
 au BufNewFile,BufRead *.gsp			setf gsp
@@ -2296,8 +2303,8 @@ au BufNewFile,BufRead *.vr,*.vri,*.vrh		setf vera
 " Vagrant (uses Ruby syntax)
 au BufNewFile,BufRead Vagrantfile		setf ruby
 
-" Verilog HDL
-au BufNewFile,BufRead *.v			setf verilog
+" Verilog HDL, V or Coq
+au BufNewFile,BufRead *.v			call dist#ft#FTv()
 
 " Verilog-AMS HDL
 au BufNewFile,BufRead *.va,*.vams		setf verilogams
