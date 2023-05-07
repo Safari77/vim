@@ -137,6 +137,7 @@ func Test_smoothscroll_number()
         'line',
       ])
       set smoothscroll
+      set splitkeep=topline
       set number cpo+=n
       :3
 
@@ -167,8 +168,16 @@ func Test_smoothscroll_number()
   call term_sendkeys(buf, "\<C-Y>")
   call VerifyScreenDump(buf, 'Test_smooth_number_6', {})
 
-  call term_sendkeys(buf, ":call DoRel()\<CR>")
+  call term_sendkeys(buf, ":botright split\<CR>gg")
   call VerifyScreenDump(buf, 'Test_smooth_number_7', {})
+  call term_sendkeys(buf, "\<C-E>")
+  call VerifyScreenDump(buf, 'Test_smooth_number_8', {})
+  call term_sendkeys(buf, "\<C-E>")
+  call VerifyScreenDump(buf, 'Test_smooth_number_9', {})
+  call term_sendkeys(buf, ":close\<CR>")
+
+  call term_sendkeys(buf, ":call DoRel()\<CR>")
+  call VerifyScreenDump(buf, 'Test_smooth_number_10', {})
 
   call StopVimInTerminal(buf)
 endfunc
@@ -578,7 +587,7 @@ func Test_smoothscroll_mouse_pos()
 endfunc
 
 " this was dividing by zero
-func Test_smoothscrol_zero_width()
+func Test_smoothscroll_zero_width()
   CheckScreendump
 
   let lines =<< trim END
@@ -595,7 +604,6 @@ func Test_smoothscrol_zero_width()
   END
   call writefile(lines, 'XSmoothScrollZero', 'D')
   let buf = RunVimInTerminal('-u NONE -i NONE -n -m -X -Z -e -s -S XSmoothScrollZero', #{rows: 6, cols: 60, wait_for_ruler: 0})
-  call TermWait(buf, 3000)
   call VerifyScreenDump(buf, 'Test_smoothscroll_zero_1', {})
 
   call term_sendkeys(buf, ":sil norm \<C-V>\<C-W>\<C-V>\<C-N>\<CR>")
@@ -604,5 +612,30 @@ func Test_smoothscrol_zero_width()
   call StopVimInTerminal(buf)
 endfunc
 
+" this was unnecessarily inserting lines
+func Test_smoothscroll_ins_lines()
+  CheckScreendump
+
+  let lines =<< trim END
+      set wrap
+      set smoothscroll
+      set scrolloff=0
+      set conceallevel=2
+      call setline(1, [
+        \'line one' .. 'with lots of text in one line '->repeat(2),
+        \'line two',
+        \'line three',
+        \'line four',
+        \'line five'
+      \])
+  END
+  call writefile(lines, 'XSmoothScrollInsLines', 'D')
+  let buf = RunVimInTerminal('-S XSmoothScrollInsLines', #{rows: 6, cols: 40})
+
+  call term_sendkeys(buf, "\<C-E>gjgk")
+  call VerifyScreenDump(buf, 'Test_smooth_ins_lines', {})
+
+  call StopVimInTerminal(buf)
+endfunc
 
 " vim: shiftwidth=2 sts=2 expandtab
