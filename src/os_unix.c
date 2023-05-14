@@ -217,7 +217,10 @@ static int  have_dollars(int, char_u **);
 static int save_patterns(int num_pat, char_u **pat, int *num_file, char_u ***file);
 
 #ifndef SIG_ERR
-# define SIG_ERR	((void (*)())-1)
+# define SIG_ERR	((sighandler_T)-1)
+#endif
+#ifndef SIG_HOLD
+# define SIG_HOLD	((sighandler_T)-2)
 #endif
 
 // volatile because it is used in signal handler sig_winch().
@@ -377,11 +380,11 @@ mch_chdir(char *path)
 	smsg("chdir(%s)", path);
 	verbose_leave();
     }
-# ifdef VMS
+#ifdef VMS
     return chdir(vms_fixfilename(path));
-# else
+#else
     return chdir(path);
-# endif
+#endif
 }
 
 // Why is NeXT excluded here (and not in os_unixx.h)?
@@ -897,7 +900,7 @@ init_signal_stack(void)
 sig_winch SIGDEFARG(sigarg)
 {
     // this is not required on all systems, but it doesn't hurt anybody
-    signal(SIGWINCH, (void (*)(int))sig_winch);
+    mch_signal(SIGWINCH, sig_winch);
     do_resize = TRUE;
 }
 #endif
@@ -909,7 +912,7 @@ sig_tstp SIGDEFARG(sigarg)
     // Second time we get called we actually need to suspend
     if (in_mch_suspend)
     {
-	signal(SIGTSTP, ignore_sigtstp ? SIG_IGN : SIG_DFL);
+	mch_signal(SIGTSTP, ignore_sigtstp ? SIG_IGN : SIG_DFL);
 	raise(sigarg);
     }
     else
@@ -918,7 +921,7 @@ sig_tstp SIGDEFARG(sigarg)
 #if !defined(__ANDROID__) && !defined(__OpenBSD__) && !defined(__DragonFly__)
     // This is not required on all systems.  On some systems (at least Android,
     // OpenBSD, and DragonFlyBSD) this breaks suspending with CTRL-Z.
-    signal(SIGTSTP, (void (*)(int))sig_tstp);
+    mch_signal(SIGTSTP, sig_tstp);
 #endif
 }
 #endif
@@ -928,7 +931,7 @@ sig_tstp SIGDEFARG(sigarg)
 catch_sigint SIGDEFARG(sigarg)
 {
     // this is not required on all systems, but it doesn't hurt anybody
-    signal(SIGINT, (void (*)(int))catch_sigint);
+    mch_signal(SIGINT, catch_sigint);
     got_int = TRUE;
 }
 #endif
@@ -938,7 +941,7 @@ catch_sigint SIGDEFARG(sigarg)
 catch_sigusr1 SIGDEFARG(sigarg)
 {
     // this is not required on all systems, but it doesn't hurt anybody
-    signal(SIGUSR1, (void (*)(int))catch_sigusr1);
+    mch_signal(SIGUSR1, catch_sigusr1);
     got_sigusr1 = TRUE;
 }
 #endif
@@ -948,7 +951,7 @@ catch_sigusr1 SIGDEFARG(sigarg)
 catch_sigpwr SIGDEFARG(sigarg)
 {
     // this is not required on all systems, but it doesn't hurt anybody
-    signal(SIGPWR, (void (*)())catch_sigpwr);
+    mch_signal(SIGPWR, catch_sigpwr);
     /*
      * I'm not sure we get the SIGPWR signal when the system is really going
      * down or when the batteries are almost empty.  Just preserve the swap
@@ -1392,7 +1395,7 @@ mch_init(void)
     // that indicates the shell (or program) that launched us does not support
     // tty job control and thus we should ignore that signal. If invoked as a
     // restricted editor (e.g., as "rvim") SIGTSTP is always ignored.
-    ignore_sigtstp = restricted || SIG_IGN == signal(SIGTSTP, SIG_ERR);
+    ignore_sigtstp = restricted || SIG_IGN == mch_signal(SIGTSTP, SIG_ERR);
 #endif
     set_signals();
 
@@ -1411,7 +1414,7 @@ set_signals(void)
     /*
      * WINDOW CHANGE signal is handled with sig_winch().
      */
-    signal(SIGWINCH, (void (*)(int))sig_winch);
+    mch_signal(SIGWINCH, sig_winch);
 #endif
 
 #ifdef SIGTSTP
@@ -1419,20 +1422,20 @@ set_signals(void)
     // In the GUI default TSTP processing is OK.
     // Checking both gui.in_use and gui.starting because gui.in_use is not set
     // at this point (set after menus are displayed), but gui.starting is set.
-    signal(SIGTSTP, ignore_sigtstp ? SIG_IGN
+    mch_signal(SIGTSTP, ignore_sigtstp ? SIG_IGN
 # ifdef FEAT_GUI
 				: gui.in_use || gui.starting ? SIG_DFL
 # endif
-				    : (void (*)(int))sig_tstp);
+				    : sig_tstp);
 #endif
 #if defined(SIGCONT)
-    signal(SIGCONT, sigcont_handler);
+    mch_signal(SIGCONT, sigcont_handler);
 #endif
 #ifdef SIGPIPE
     /*
      * We want to ignore breaking of PIPEs.
      */
-    signal(SIGPIPE, SIG_IGN);
+    mch_signal(SIGPIPE, SIG_IGN);
 #endif
 
 #ifdef SIGINT
@@ -1443,14 +1446,14 @@ set_signals(void)
     /*
      * Call user's handler on SIGUSR1
      */
-    signal(SIGUSR1, (void (*)(int))catch_sigusr1);
+    mch_signal(SIGUSR1, catch_sigusr1);
 #endif
 
     /*
      * Ignore alarm signals (Perl's alarm() generates it).
      */
 #ifdef SIGALRM
-    signal(SIGALRM, SIG_IGN);
+    mch_signal(SIGALRM, SIG_IGN);
 #endif
 
 #ifdef SIGPWR
@@ -1458,7 +1461,7 @@ set_signals(void)
      * Catch SIGPWR (power failure?) to preserve the swap files, so that no
      * work will be lost.
      */
-    signal(SIGPWR, (void (*)())catch_sigpwr);
+    mch_signal(SIGPWR, catch_sigpwr);
 #endif
 
     /*
@@ -1471,7 +1474,7 @@ set_signals(void)
      * When the GUI is running, ignore the hangup signal.
      */
     if (gui.in_use)
-	signal(SIGHUP, SIG_IGN);
+	mch_signal(SIGHUP, SIG_IGN);
 #endif
 }
 
@@ -1482,7 +1485,7 @@ set_signals(void)
     static void
 catch_int_signal(void)
 {
-    signal(SIGINT, (void (*)(int))catch_sigint);
+    mch_signal(SIGINT, catch_sigint);
 }
 #endif
 
@@ -1492,7 +1495,7 @@ reset_signals(void)
     catch_signals(SIG_DFL, SIG_DFL);
 #if defined(SIGCONT)
     // SIGCONT isn't in the list, because its default action is ignore
-    signal(SIGCONT, SIG_DFL);
+    mch_signal(SIGCONT, SIG_DFL);
 #endif
 }
 
@@ -1534,7 +1537,7 @@ catch_signals(
 	    sv.sv_flags = SV_ONSTACK;
 	    sigvec(signal_info[i].sig, &sv, NULL);
 # else
-	    signal(signal_info[i].sig, func_deadly);
+	    mch_signal(signal_info[i].sig, func_deadly);
 # endif
 #endif
 	}
@@ -1542,11 +1545,11 @@ catch_signals(
 	{
 	    // Deal with non-deadly signals.
 #ifdef SIGTSTP
-	    signal(signal_info[i].sig,
+	    mch_signal(signal_info[i].sig,
 		    signal_info[i].sig == SIGTSTP && ignore_sigtstp
 						       ? SIG_IGN : func_other);
 #else
-	    signal(signal_info[i].sig, func_other);
+	    mch_signal(signal_info[i].sig, func_other);
 #endif
 	}
     }
@@ -1951,7 +1954,7 @@ get_x11_windis(void)
     if (x11_window != 0 && x11_display == NULL)
     {
 #ifdef SET_SIG_ALARM
-	void (*sig_save)();
+	sighandler_T sig_save;
 #endif
 #ifdef ELAPSED_FUNC
 	elapsed_T start_tv;
@@ -1966,14 +1969,14 @@ get_x11_windis(void)
 	 * the network connection is bad.  Set an alarm timer to get out.
 	 */
 	sig_alarm_called = FALSE;
-	sig_save = (void (*)())signal(SIGALRM, (void (*)())sig_alarm);
+	sig_save = mch_signal(SIGALRM, sig_alarm);
 	alarm(2);
 #endif
 	x11_display = XOpenDisplay(NULL);
 
 #ifdef SET_SIG_ALARM
 	alarm(0);
-	signal(SIGALRM, (void (*)())sig_save);
+	mch_signal(SIGALRM, sig_save);
 	if (p_verbose > 0 && sig_alarm_called)
 	    verb_msg(_("Opening the X display timed out"));
 #endif
@@ -3547,7 +3550,7 @@ may_core_dump(void)
 {
     if (deadly_signal != 0)
     {
-	signal(deadly_signal, SIG_DFL);
+	mch_signal(deadly_signal, SIG_DFL);
 	kill(getpid(), deadly_signal);	// Die using the signal we caught
     }
 }
@@ -4856,7 +4859,7 @@ mch_call_shell_fork(
 		    // will exit and send SIGHUP to all processes in its
 		    // group, killing the just started process.  Ignore SIGHUP
 		    // to avoid that. (suggested by Simon Schubert)
-		    signal(SIGHUP, SIG_IGN);
+		    mch_signal(SIGHUP, SIG_IGN);
 #  endif
 		}
 # endif
@@ -7311,7 +7314,7 @@ gpm_open(void)
 	// we are going to suspend or starting an external process
 	// so we shouldn't  have problem with this
 # ifdef SIGTSTP
-	signal(SIGTSTP, restricted ? SIG_IGN : (void (*)())sig_tstp);
+	mch_signal(SIGTSTP, restricted ? SIG_IGN : sig_tstp);
 # endif
 	return 1; // succeed
     }
@@ -7443,7 +7446,7 @@ sysmouse_open(void)
     if (ioctl(1, CONS_MOUSECTL, &mouse) == -1)
 	return FAIL;
 
-    signal(SIGUSR2, (void (*)())sig_sysmouse);
+    mch_signal(SIGUSR2, sig_sysmouse);
     mouse.operation = MOUSE_SHOW;
     ioctl(1, CONS_MOUSECTL, &mouse);
     return OK;
@@ -7458,7 +7461,7 @@ sysmouse_close(void)
 {
     struct mouse_info	mouse;
 
-    signal(SIGUSR2, restricted ? SIG_IGN : SIG_DFL);
+    mch_signal(SIGUSR2, restricted ? SIG_IGN : SIG_DFL);
     mouse.operation = MOUSE_MODE;
     mouse.u.mode.mode = 0;
     mouse.u.mode.signal = 0;

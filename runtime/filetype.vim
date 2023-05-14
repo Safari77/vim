@@ -2058,7 +2058,10 @@ au BufNewFile,BufRead *.spy,*.spi		setf spyce
 au BufNewFile,BufRead squid.conf		setf squid
 
 " SQL for Oracle Designer
-au BufNewFile,BufRead *.tyb,*.typ,*.tyc,*.pkb,*.pks	setf sql
+au BufNewFile,BufRead *.tyb,*.tyc,*.pkb,*.pks	setf sql
+
+" *.typ can be either SQL or Typst files
+au BufNewFile,BufRead *.typ			call dist#ft#FTtyp()
 
 " SQL
 au BufNewFile,BufRead *.sql			call dist#ft#SQL()
@@ -2742,6 +2745,9 @@ au BufNewFile,BufRead .login*,.cshrc*  call dist#ft#CSH()
 
 " tmux configuration with arbitrary extension
 au BufNewFile,BufRead {.,}tmux*.conf*		setf tmux
+
+" Universal Scene Description
+au BufNewFile,BufRead *.usda,*.usd		setf usd
 
 " VHDL
 au BufNewFile,BufRead *.vhdl_[0-9]*		call s:StarSetf('vhdl')
