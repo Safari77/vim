@@ -1,4 +1,5 @@
 /* os_unix.c */
+sighandler_T mch_signal(int sig, sighandler_T func);
 void os_getrandom(void*, size_t);
 int mch_chdir(char *path);
 void mch_write(char_u *s, int len);

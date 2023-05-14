@@ -346,6 +346,62 @@ static struct signalinfo
     {-1,	    "Unknown!", FALSE}
 };
 
+    sighandler_T
+mch_signal(int sig, sighandler_T func)
+{
+#if defined(HAVE_SIGACTION) && defined(HAVE_SIGPROCMASK)
+    // Modern implementation: use sigaction().
+    struct sigaction	sa, old;
+    sigset_t		curset;
+    int			blocked;
+
+    if (sigprocmask(SIG_BLOCK, NULL, &curset) == -1)
+	return SIG_ERR;
+
+    blocked = sigismember(&curset, sig);
+
+    if (func == SIG_HOLD)
+    {
+	if (blocked)
+	    return SIG_HOLD;
+
+	sigemptyset(&curset);
+	sigaddset(&curset, sig);
+
+	if (sigaction(sig, NULL, &old) == -1
+				|| sigprocmask(SIG_BLOCK, &curset, NULL) == -1)
+	    return SIG_ERR;
+	return old.sa_handler;
+    }
+
+    if (blocked)
+    {
+	sigemptyset(&curset);
+	sigaddset(&curset, sig);
+
+	if (sigprocmask(SIG_UNBLOCK, &curset, NULL) == -1)
+	    return SIG_ERR;
+    }
+
+    sa.sa_handler = func;
+    sigemptyset(&sa.sa_mask);
+# ifdef SA_RESTART
+    sa.sa_flags = SA_RESTART;
+# else
+    sa.sa_flags = 0;
+# endif
+    if (sigaction(sig, &sa, &old) == -1)
+	return SIG_ERR;
+    return blocked ? SIG_HOLD: old.sa_handler;
+#elif defined(HAVE_SIGSET)
+    // Using sigset() is preferred above signal().
+    return sigset(sig, func);
+#else
+    // Oldest and most compatible solution.
+    return signal(sig, func);
+#endif
+}
+
 void os_getrandom(void *buf, size_t len)
 {
     ssize_t written;
