@@ -312,7 +312,6 @@ update_topline(void)
 	*so_ptr = mouse_dragging - 1;
 
     linenr_T old_topline = curwin->w_topline;
-    colnr_T old_skipcol = curwin->w_skipcol;
 #ifdef FEAT_DIFF
     int old_topfill = curwin->w_topfill;
 #endif
@@ -517,9 +516,11 @@ update_topline(void)
 	dollar_vcol = -1;
 	redraw_later(UPD_VALID);
 
-	// Only reset w_skipcol if it was not just set to make cursor visible.
-	if (curwin->w_skipcol == old_skipcol)
+	// When 'smoothscroll' is not set, should reset w_skipcol.
+	if (!curwin->w_p_sms)
 	    reset_skipcol();
+	else if (curwin->w_skipcol != 0)
+	    redraw_later(UPD_SOME_VALID);
 
 	// May need to set w_skipcol when cursor in w_topline.
 	if (curwin->w_cursor.lnum == curwin->w_topline)
@@ -893,10 +894,11 @@ curs_rows(win_T *wp)
 		--i;			// hold at inserted lines
 	}
 	if (valid
+	       && (lnum != wp->w_topline || (wp->w_skipcol == 0
 #ifdef FEAT_DIFF
-		&& (lnum != wp->w_topline || !wp->w_p_diff)
+					    && !wp->w_p_diff
 #endif
-		)
+	       )))
 	{
 #ifdef FEAT_FOLDING
 	    lnum = wp->w_lines[i].wl_lastlnum + 1;
