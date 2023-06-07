@@ -319,6 +319,9 @@ au BufNewFile,BufRead *.cdl			setf cdl
 " Conary Recipe
 au BufNewFile,BufRead *.recipe			setf conaryrecipe
 
+" Corn config file
+au BufNewFile,BufRead *.corn			setf corn
+
 " ChainPack Object Notation (CPON)
 au BufNewFile,BufRead *.cpon			setf cpon
 
@@ -1270,7 +1273,7 @@ au BufNewFile,BufRead *.hgrc,*hgrc		setf cfg
 au BufNewFile,BufRead *.mmd,*.mmdc,*.mermaid	setf mermaid
 
 " Meson Build system config
-au BufNewFile,BufRead meson.build,meson_options.txt setf meson
+au BufNewFile,BufRead meson.build,meson.options,meson_options.txt setf meson
 au BufNewFile,BufRead *.wrap			setf dosini
 
 " Messages (logs mostly)
@@ -2295,6 +2298,9 @@ au BufNewFile,BufRead */.init/*.conf,*/.init/*.override	       setf upstart
 au BufNewFile,BufRead */.config/upstart/*.conf		       setf upstart
 au BufNewFile,BufRead */.config/upstart/*.override	       setf upstart
 
+" URL shortcut
+au BufNewFile,BufRead *.url			setf urlshortcut
+
 " Vala
 au BufNewFile,BufRead *.vala			setf vala
 
@@ -2808,8 +2814,10 @@ augroup END
 " Generic configuration file. Use FALLBACK, it's just guessing!
 au filetypedetect BufNewFile,BufRead,StdinReadPost *
 	\ if !did_filetype() && expand("<amatch>") !~ g:ft_ignore_pat
-	\    && (getline(1) =~ '^#' || getline(2) =~ '^#' || getline(3) =~ '^#'
-	\	|| getline(4) =~ '^#' || getline(5) =~ '^#') |
+	\    && (expand("<amatch>") =~# '\.conf$'
+	\	|| getline(1) =~ '^#' || getline(2) =~ '^#'
+	\	|| getline(3) =~ '^#' || getline(4) =~ '^#'
+	\	|| getline(5) =~ '^#') |
 	\   setf FALLBACK conf |
 	\ endif
 
