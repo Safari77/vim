@@ -838,6 +838,23 @@ def Test_class_member()
   END
   v9.CheckScriptSuccess(lines)
 
+  # using static class member twice
+  lines =<< trim END
+      vim9script
+
+      class HTML
+        static author: string = 'John Doe'
+
+        static def MacroSubstitute(s: string): string
+          return substitute(s, '{{author}}', author, 'gi')
+        enddef
+      endclass
+
+      assert_equal('some text', HTML.MacroSubstitute('some text'))
+      assert_equal('some text', HTML.MacroSubstitute('some text'))
+  END
+  v9.CheckScriptSuccess(lines)
+
   # access private member in lambda
   lines =<< trim END
       vim9script
@@ -1763,6 +1780,29 @@ def Test_closure_in_class()
 
       Foo.new()
       assert_equal(['A'], g:result)
+  END
+  v9.CheckScriptSuccess(lines)
+enddef
+
+def Test_call_constructor_from_legacy()
+  var lines =<< trim END
+      vim9script
+
+      var newCalled = 'false'
+
+      class A
+        def new()
+          newCalled = 'true'
+        enddef
+      endclass
+
+      export def F(options = {}): any
+        return A
+      enddef
+
+      g:p = F()
+      legacy call p.new()
+      assert_equal('true', newCalled)
   END
   v9.CheckScriptSuccess(lines)
 enddef
