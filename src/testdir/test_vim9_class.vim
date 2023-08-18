@@ -518,6 +518,83 @@ def Test_class_default_new()
   v9.CheckScriptFailure(lines, 'E119:')
 enddef
 
+
+def Test_class_new_with_object_member()
+  var lines =<< trim END
+      vim9script
+
+      class C
+        this.str: string
+        this.num: number
+        def new(this.str, this.num)
+        enddef
+        def newVals(this.str, this.num)
+        enddef
+      endclass
+
+      def Check()
+        try
+          var c = C.new('cats', 2)
+          assert_equal('cats', c.str)
+          assert_equal(2, c.num)
+
+          c = C.newVals('dogs', 4)
+          assert_equal('dogs', c.str)
+          assert_equal(4, c.num)
+        catch
+          assert_report($'Unexpected exception was caught: {v:exception}')
+        endtry
+      enddef
+
+      Check()
+  END
+  v9.CheckScriptSuccess(lines)
+
+  lines =<< trim END
+      vim9script
+
+      class C
+        this.str: string
+        this.num: number
+        def new(this.str, this.num)
+        enddef
+      endclass
+
+      def Check()
+        try
+          var c = C.new(1, 2)
+        catch
+          assert_report($'Unexpected exception was caught: {v:exception}')
+        endtry
+      enddef
+
+      Check()
+  END
+  v9.CheckScriptFailure(lines, 'E1013:')
+
+  lines =<< trim END
+      vim9script
+
+      class C
+        this.str: string
+        this.num: number
+        def newVals(this.str, this.num)
+        enddef
+      endclass
+
+      def Check()
+        try
+          var c = C.newVals('dogs', 'apes')
+        catch
+          assert_report($'Unexpected exception was caught: {v:exception}')
+        endtry
+      enddef
+
+      Check()
+  END
+  v9.CheckScriptFailure(lines, 'E1013:')
+enddef
+
 def Test_class_object_member_inits()
   var lines =<< trim END
       vim9script
@@ -1874,5 +1951,116 @@ def Test_defer_with_object()
   unlet g:result
 enddef
 
+" The following test used to crash Vim (Github issue #12676)
+def Test_extends_method_crashes_vim()
+  var lines =<< trim END
+    vim9script
+
+    class Observer
+    endclass
+
+    class Property
+      this.value: any
+
+      def Set(v: any)
+        if v != this.value
+          this.value = v
+        endif
+      enddef
+
+      def Register(observer: Observer)
+      enddef
+    endclass
+
+    class Bool extends Property
+      this.value: bool
+    endclass
+
+    def Observe(obj: Property, who: Observer)
+      obj.Register(who)
+    enddef
+
+    var p = Bool.new(false)
+    var myObserver = Observer.new()
+
+    Observe(p, myObserver)
+
+    p.Set(true)
+  END
+  v9.CheckScriptSuccess(lines)
+enddef
+
+" Test for calling a method in a class that is extended
+def Test_call_method_in_extended_class()
+  var lines =<< trim END
+    vim9script
+
+    var prop_init_called = false
+    var prop_register_called = false
+
+    class Property
+      def Init()
+        prop_init_called = true
+      enddef
+
+      def Register()
+        prop_register_called = true
+      enddef
+    endclass
+
+    class Bool extends Property
+    endclass
+
+    def Observe(obj: Property)
+      obj.Register()
+    enddef
+
+    var p = Property.new()
+    Observe(p)
+
+    p.Init()
+    assert_true(prop_init_called)
+    assert_true(prop_register_called)
+  END
+  v9.CheckScriptSuccess(lines)
+enddef
+
+" Test for calling a method in the parent class that is extended partially.
+" This used to fail with the 'E118: Too many arguments for function: Text' error
+" message (Github issue #12524).
+def Test_call_method_in_parent_class()
+  var lines =<< trim END
+    vim9script
+
+    class Widget
+      this._lnum: number = 1
+
+      def SetY(lnum: number)
+        this._lnum = lnum
+      enddef
+
+      def Text(): string
+        return ''
+      enddef
+    endclass
+
+    class Foo extends Widget
+      def Text(): string
+        return '<Foo>'
+      enddef
+    endclass
+
+    def Stack(w1: Widget, w2: Widget): list<Widget>
+      w1.SetY(1)
+      w2.SetY(2)
+      return [w1, w2]
+    enddef
+
+    var foo1 = Foo.new()
+    var foo2 = Foo.new()
+    var l = Stack(foo1, foo2)
+  END
+  v9.CheckScriptSuccess(lines)
+enddef
 
 " vim: ts=8 sw=2 sts=2 expandtab tw=80 fdm=marker
