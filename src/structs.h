@@ -827,6 +827,8 @@ typedef struct textprop_S
     int		tp_id;		// identifier
     int		tp_type;	// property type
     int		tp_flags;	// TP_FLAG_ values
+    int		tp_padleft;	// left padding between text line and virtual
+				// text
 } textprop_T;
 
 #define TP_FLAG_CONT_NEXT	0x1	// property continues in next line
@@ -3778,6 +3780,7 @@ struct window_S
     int		w_vsep_width;	    // Number of separator columns (0 or 1).
 
     pos_save_T	w_save_cursor;	    // backup of cursor pos and topline
+    int		w_do_win_fix_cursor;// if TRUE cursor may be invalid
 
 #ifdef FEAT_PROP_POPUP
     int		w_popup_flags;	    // POPF_ values
@@ -4764,14 +4767,22 @@ typedef enum {
     MAGIC_ALL = 4		// "\v" very magic
 } magic_T;
 
+typedef enum {
+    WT_UNKNOWN = 0,	// Unknown or unspecified location
+    WT_ARGUMENT,
+    WT_VARIABLE,
+    WT_MEMBER,
+    WT_METHOD,
+} wherekind_T;
+
 // Struct used to pass to error messages about where the error happened.
 typedef struct {
-    char    *wt_func_name;  // function name or NULL
-    char    wt_index;	    // argument or variable index, 0 means unknown
-    char    wt_variable;    // "variable" when TRUE, "argument" otherwise
+    char	*wt_func_name;  // function name or NULL
+    char	wt_index;	// argument or variable index, 0 means unknown
+    wherekind_T	wt_kind;	// "variable" when TRUE, "argument" otherwise
 } where_T;
 
-#define WHERE_INIT {NULL, 0, 0}
+#define WHERE_INIT {NULL, 0, WT_UNKNOWN}
 
 // Struct passed to get_v_event() and restore_v_event().
 typedef struct {
@@ -4805,21 +4816,22 @@ typedef struct {
 // Argument for lbr_chartabsize().
 typedef struct {
     win_T	*cts_win;
-    char_u	*cts_line;	    // start of the line
-    char_u	*cts_ptr;	    // current position in line
+    char_u	*cts_line;		// start of the line
+    char_u	*cts_ptr;		// current position in line
 #ifdef FEAT_PROP_POPUP
     int		cts_text_prop_count;	// number of text props; when zero
 					// cts_text_props is not used
     textprop_T	*cts_text_props;	// text props (allocated)
-    char	cts_has_prop_with_text; // TRUE if a property inserts text
-    int		cts_cur_text_width;     // width of current inserted text
+    char	cts_has_prop_with_text;	// TRUE if a property inserts text
+    int		cts_cur_text_width;	// width of current inserted text
     int		cts_prop_lines;		// nr of properties above or below
     int		cts_first_char;		// width text props above the line
     int		cts_with_trailing;	// include size of trailing props with
 					// last character
     int		cts_start_incl;		// prop has true "start_incl" arg
 #endif
-    int		cts_vcol;	    // virtual column at current position
+    int		cts_vcol;		// virtual column at current position
+    int		cts_max_head_vcol;	// see win_lbr_chartabsize()
 } chartabsize_T;
 
 /*
