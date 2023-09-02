@@ -2982,7 +2982,8 @@ insecure_flag(int opt_idx, int opt_flags)
 /*
  * Redraw the window title and/or tab page text later.
  */
-void redraw_titles(void)
+    void
+redraw_titles(void)
 {
     need_maketitle = TRUE;
     redraw_tabline = TRUE;
@@ -7373,6 +7374,14 @@ set_context_in_set_cmd(
 	return;
 
     xp->xp_pattern = p + 1;
+
+#ifdef FEAT_SYN_HL
+    if (options[opt_idx].var == (char_u *)&p_syn)
+    {
+	xp->xp_context = EXPAND_OWNSYNTAX;
+	return;
+    }
+#endif
 
     if (flags & P_EXPAND)
     {

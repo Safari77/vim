@@ -1650,6 +1650,18 @@ win_line(
     }
 #endif
 
+#if defined(FEAT_LINEBREAK) || defined(FEAT_PROP_POPUP)
+    colnr_T vcol_first_char = 0;
+    if (wp->w_p_lbr && !number_only)
+    {
+	chartabsize_T cts;
+	init_chartabsize_arg(&cts, wp, lnum, 0, line, line);
+	(void)win_lbr_chartabsize(&cts, NULL);
+	vcol_first_char = cts.cts_first_char;
+	clear_chartabsize_arg(&cts);
+    }
+#endif
+
     // 'nowrap' or 'wrap' and a single line that doesn't fit: Advance to the
     // first character to be displayed.
     if (wp->w_p_wrap)
@@ -2879,7 +2891,11 @@ win_line(
 		    char_u  *p = ptr - (mb_off + 1);
 		    chartabsize_T cts;
 
-		    init_chartabsize_arg(&cts, wp, lnum, wlv.vcol, line, p);
+		    init_chartabsize_arg(&cts, wp, lnum, wlv.vcol
+# ifdef FEAT_PROP_POPUP
+							     - vcol_first_char,
+# endif
+								      line, p);
 # ifdef FEAT_PROP_POPUP
 		    // do not want virtual text counted here
 		    cts.cts_has_prop_with_text = FALSE;
@@ -2887,14 +2903,6 @@ win_line(
 		    wlv.n_extra = win_lbr_chartabsize(&cts, NULL) - 1;
 		    clear_chartabsize_arg(&cts);
 
-		    // We have just drawn the showbreak value, no need to add
-		    // space for it again.
-		    if (wlv.vcol == wlv.vcol_sbr)
-		    {
-			wlv.n_extra -= MB_CHARLEN(get_showbreak_value(wp));
-			if (wlv.n_extra < 0)
-			    wlv.n_extra = 0;
-		    }
 		    if (on_last_col && c != TAB)
 			// Do not continue search/match highlighting over the
 			// line break, but for TABs the highlighting should
@@ -3733,7 +3741,11 @@ win_line(
 		&& (*ptr != NUL
 		    || lcs_eol_one > 0
 		    || (wlv.n_extra > 0 && (wlv.c_extra != NUL
-						     || *wlv.p_extra != NUL))))
+						     || *wlv.p_extra != NUL))
+#ifdef FEAT_PROP_POPUP
+		    || text_prop_next < text_prop_count
+#endif
+		   ))
 	{
 	    c = wp->w_lcs_chars.ext;
 	    wlv.char_attr = hl_combine_attr(wlv.win_attr, HL_ATTR(HLF_AT));
@@ -4014,6 +4026,7 @@ win_line(
 #endif
 #ifdef FEAT_PROP_POPUP
 		    || text_prop_above || text_prop_follows
+		    || text_prop_next < text_prop_count
 #endif
 		    || (wp->w_p_list && wp->w_lcs_chars.eol != NUL
 						&& wlv.p_extra != at_end_str)

@@ -1865,11 +1865,26 @@ compile_lhs(
 	else if (use_class)
 	{
 	    // for an object or class member get the type of the member
-	    class_T *cl = lhs->lhs_type->tt_class;
-	    lhs->lhs_member_type = class_member_type(cl, after + 1,
-					   lhs->lhs_end, &lhs->lhs_member_idx);
+	    class_T	*cl = lhs->lhs_type->tt_class;
+	    ocmember_T	*m;
+
+	    lhs->lhs_member_type = class_member_type(cl,
+					lhs->lhs_type->tt_type == VAR_OBJECT,
+					after + 1, lhs->lhs_end,
+					&lhs->lhs_member_idx, &m);
 	    if (lhs->lhs_member_idx < 0)
 		return FAIL;
+
+	    // If it is private member variable, then accessing it outside the
+	    // class is not allowed.
+	    if ((m->ocm_access != VIM_ACCESS_ALL) && !inside_class(cctx, cl))
+	    {
+		char *msg = (m->ocm_access == VIM_ACCESS_PRIVATE)
+				? e_cannot_access_private_member_str
+				: e_cannot_change_readonly_variable_str;
+		semsg(_(msg), m->ocm_name);
+		return FAIL;
+	    }
 	}
 	else
 	{
@@ -2075,11 +2090,12 @@ compile_load_lhs_with_index(lhs_T *lhs, char_u *var_start, cctx_T *cctx)
 	// Also for "obj.value".
        char_u *dot = vim_strchr(var_start, '.');
        if (dot == NULL)
-           return FAIL;
+	   return FAIL;
 
-	class_T *cl = lhs->lhs_type->tt_class;
-	type_T *type = class_member_type(cl, dot + 1,
-					   lhs->lhs_end, &lhs->lhs_member_idx);
+	class_T	*cl = lhs->lhs_type->tt_class;
+	type_T	*type = class_member_type(cl, TRUE, dot + 1,
+					   lhs->lhs_end, &lhs->lhs_member_idx,
+					   NULL);
 	if (lhs->lhs_member_idx < 0)
 	    return FAIL;
 
@@ -2299,6 +2315,9 @@ push_default_value(
 	case VAR_CHANNEL:
 	    r = generate_PUSHCHANNEL(cctx);
 	    break;
+	case VAR_OBJECT:
+	    r = generate_PUSHOBJ(cctx);
+	    break;
 	case VAR_NUMBER:
 	case VAR_UNKNOWN:
 	case VAR_ANY:
@@ -2306,7 +2325,6 @@ push_default_value(
 	case VAR_VOID:
 	case VAR_INSTR:
 	case VAR_CLASS:
-	case VAR_OBJECT:
 	case VAR_SPECIAL:  // cannot happen
 	    // This is skipped for local variables, they are always
 	    // initialized to zero.  But in a "for" or "while" loop
@@ -2965,7 +2983,8 @@ get_compile_type(ufunc_T *ufunc)
 #ifdef FEAT_PROFILE
     if (do_profiling == PROF_YES)
     {
-	if (!ufunc->uf_profiling && has_profiling(FALSE, ufunc->uf_name, NULL))
+	if (!ufunc->uf_profiling && has_profiling(FALSE, ufunc->uf_name, NULL,
+							    &ufunc->uf_hash))
 	    func_do_profile(ufunc);
 	if (ufunc->uf_profiling)
 	    return CT_PROFILE;
