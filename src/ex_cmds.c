@@ -4519,6 +4519,9 @@ ex_substitute(exarg_T *eap)
 		{
 		    nmatch = curbuf->b_ml.ml_line_count - sub_firstlnum + 1;
 		    skip_match = TRUE;
+		    // safety check
+		    if (nmatch < 0)
+			goto skip;
 		}
 
 		// Need room for:
@@ -4650,6 +4653,9 @@ ex_substitute(exarg_T *eap)
 		 */
 		mch_memmove(new_end, sub_firstline + copycol, (size_t)copy_len);
 		new_end += copy_len;
+
+		if ((int)new_start_len - copy_len < sublen)
+		    sublen = new_start_len - copy_len - 1;
 
 #ifdef FEAT_EVAL
 		++textlock;
