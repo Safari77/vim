@@ -1013,7 +1013,7 @@ au BufNewFile,BufRead ipf.conf,ipf6.conf,ipf.rules	setf ipfilter
 au BufNewFile,BufRead *.4gl,*.4gh,*.m4gl	setf fgl
 
 " .INI file for MSDOS
-au BufNewFile,BufRead *.ini			setf dosini
+au BufNewFile,BufRead *.ini,*.INI		setf dosini
 
 " SysV Inittab
 au BufNewFile,BufRead inittab			setf inittab
@@ -1094,7 +1094,7 @@ au BufNewFile,BufRead *.jsonnet,*.libsonnet	setf jsonnet
 au BufNewFile,BufRead *.jl			setf julia
 
 " Just
-autocmd BufNewFile,BufRead *[jJ]ustfile,.justfile,*.just setfiletype just
+au BufNewFile,BufRead [jJ]ustfile,.justfile,*.just setf just
 
 " KDL
 au BufNewFile,BufRead *.kdl			setf kdl

@@ -68,8 +68,6 @@
 #endif
 
 #define PY_SSIZE_T_CLEAN
-#define PyLong_Type (*py3_PyLong_Type)
-#define PyBool_Type (*py3_PyBool_Type)
 
 #ifdef Py_LIMITED_API
 # define USE_LIMITED_API // Using Python 3 limited ABI
@@ -106,6 +104,9 @@
 #define PyString_FromString(repr) \
     PyUnicode_Decode(repr, STRLEN(repr), ENC_OPT, ERRORS_DECODE_ARG)
 #define PyString_FromFormat PyUnicode_FromFormat
+#ifdef PyUnicode_FromFormat
+# define Py_UNICODE_USE_UCS_FUNCTIONS
+#endif
 #ifndef PyInt_Check
 # define PyInt_Check(obj) PyLong_Check(obj)
 #endif
@@ -136,7 +137,12 @@ static HINSTANCE hinstPy3 = 0; // Instance of python.dll
 
 #if defined(DYNAMIC_PYTHON3) || defined(PROTO)
 
-# ifndef MSWIN
+# ifdef MSWIN
+#  define load_dll vimLoadLib
+#  define close_dll FreeLibrary
+#  define symbol_from_dll GetProcAddress
+#  define load_dll_error GetWin32Error
+# else
 #  include <dlfcn.h>
 #  define FARPROC void*
 #  if defined(PY_NO_RTLD_GLOBAL) && defined(PY3_NO_RTLD_GLOBAL)
@@ -147,11 +153,6 @@ static HINSTANCE hinstPy3 = 0; // Instance of python.dll
 #  define close_dll dlclose
 #  define symbol_from_dll dlsym
 #  define load_dll_error dlerror
-# else
-#  define load_dll vimLoadLib
-#  define close_dll FreeLibrary
-#  define symbol_from_dll GetProcAddress
-#  define load_dll_error GetWin32Error
 # endif
 /*
  * Wrapper defines
@@ -218,14 +219,14 @@ static HINSTANCE hinstPy3 = 0; // Instance of python.dll
 # define PyObject_GetItem py3_PyObject_GetItem
 # define PyObject_IsTrue py3_PyObject_IsTrue
 # define PyModule_GetDict py3_PyModule_GetDict
-# ifndef USE_LIMITED_API
+# ifdef USE_LIMITED_API
+#  define Py_CompileString py3_Py_CompileString
+#  define PyEval_EvalCode py3_PyEval_EvalCode
+# else
 #  undef PyRun_SimpleString
 #  define PyRun_SimpleString py3_PyRun_SimpleString
 #  undef PyRun_String
 #  define PyRun_String py3_PyRun_String
-# else
-#  define Py_CompileString py3_Py_CompileString
-#  define PyEval_EvalCode py3_PyEval_EvalCode
 # endif
 # define PyObject_GetAttrString py3_PyObject_GetAttrString
 # define PyObject_HasAttrString py3_PyObject_HasAttrString
@@ -297,6 +298,10 @@ static HINSTANCE hinstPy3 = 0; // Instance of python.dll
 # define PyFloat_Type (*py3_PyFloat_Type)
 # define PyNumber_Check (*py3_PyNumber_Check)
 # define PyNumber_Long (*py3_PyNumber_Long)
+# define PyBool_Type (*py3_PyBool_Type)
+# if PY_VERSION_HEX >= 0x030c00b0
+#  define PyLong_Type (*py3_PyLong_Type)
+# endif
 # define PyErr_NewException py3_PyErr_NewException
 # ifdef Py_DEBUG
 #  define _Py_NegativeRefcount py3__Py_NegativeRefcount
@@ -319,15 +324,14 @@ static HINSTANCE hinstPy3 = 0; // Instance of python.dll
 # define PyType_GenericNew py3_PyType_GenericNew
 # undef PyUnicode_FromString
 # define PyUnicode_FromString py3_PyUnicode_FromString
-# ifndef PyUnicode_FromFormat
-#  define PyUnicode_FromFormat py3_PyUnicode_FromFormat
-# else
-#  define Py_UNICODE_USE_UCS_FUNCTIONS
+# ifdef Py_UNICODE_USE_UCS_FUNCTIONS
 #  ifdef Py_UNICODE_WIDE
 #   define PyUnicodeUCS4_FromFormat py3_PyUnicodeUCS4_FromFormat
 #  else
 #   define PyUnicodeUCS2_FromFormat py3_PyUnicodeUCS2_FromFormat
 #  endif
+# else
+#  define PyUnicode_FromFormat py3_PyUnicode_FromFormat
 # endif
 # undef PyUnicode_Decode
 # define PyUnicode_Decode py3_PyUnicode_Decode
@@ -386,12 +390,12 @@ static void (*py3_Py_Finalize)(void);
 static void (*py3_PyErr_SetString)(PyObject *, const char *);
 static void (*py3_PyErr_SetObject)(PyObject *, PyObject *);
 static int (*py3_PyErr_ExceptionMatches)(PyObject *);
-# ifndef USE_LIMITED_API
-static int (*py3_PyRun_SimpleString)(char *);
-static PyObject* (*py3_PyRun_String)(char *, int, PyObject *, PyObject *);
-# else
+# ifdef USE_LIMITED_API
 static PyObject* (*py3_Py_CompileString)(const char *, const char *, int);
 static PyObject* (*py3_PyEval_EvalCode)(PyObject *co, PyObject *globals, PyObject *locals);
+# else
+static int (*py3_PyRun_SimpleString)(char *);
+static PyObject* (*py3_PyRun_String)(char *, int, PyObject *, PyObject *);
 # endif
 static PyObject* (*py3_PyObject_GetAttrString)(PyObject *, const char *);
 static int (*py3_PyObject_HasAttrString)(PyObject *, const char *);
@@ -428,14 +432,14 @@ static int (*py3_PyType_GetFlags)(PyTypeObject *o);
 static int (*py3_PyType_Ready)(PyTypeObject *type);
 static int (*py3_PyDict_SetItemString)(PyObject *dp, char *key, PyObject *item);
 static PyObject* (*py3_PyUnicode_FromString)(const char *u);
-# ifndef Py_UNICODE_USE_UCS_FUNCTIONS
-static PyObject* (*py3_PyUnicode_FromFormat)(const char *u, ...);
-# else
+# ifdef Py_UNICODE_USE_UCS_FUNCTIONS
 #  ifdef Py_UNICODE_WIDE
 static PyObject* (*py3_PyUnicodeUCS4_FromFormat)(const char *u, ...);
 #  else
 static PyObject* (*py3_PyUnicodeUCS2_FromFormat)(const char *u, ...);
 #  endif
+# else
+static PyObject* (*py3_PyUnicode_FromFormat)(const char *u, ...);
 # endif
 static PyObject* (*py3_PyUnicode_Decode)(const char *u, Py_ssize_t size,
 	const char *encoding, const char *errors);
@@ -496,9 +500,9 @@ static PyTypeObject* py3_PyStdPrinter_Type;
 # endif
 static PyTypeObject* py3_PySlice_Type;
 static PyTypeObject* py3_PyFloat_Type;
-PyTypeObject* py3_PyBool_Type;
+static PyTypeObject* py3_PyBool_Type;
 # if PY_VERSION_HEX >= 0x030c00b0
-PyTypeObject* py3_PyLong_Type;
+static PyTypeObject* py3_PyLong_Type;
 # endif
 static int (*py3_PyNumber_Check)(PyObject *);
 static PyObject* (*py3_PyNumber_Long)(PyObject *);
@@ -592,12 +596,12 @@ static struct
     {"PyErr_SetString", (PYTHON_PROC*)&py3_PyErr_SetString},
     {"PyErr_SetObject", (PYTHON_PROC*)&py3_PyErr_SetObject},
     {"PyErr_ExceptionMatches", (PYTHON_PROC*)&py3_PyErr_ExceptionMatches},
-# ifndef USE_LIMITED_API
-    {"PyRun_SimpleString", (PYTHON_PROC*)&py3_PyRun_SimpleString},
-    {"PyRun_String", (PYTHON_PROC*)&py3_PyRun_String},
-# else
+# ifdef USE_LIMITED_API
     {"Py_CompileString", (PYTHON_PROC*)&py3_Py_CompileString},
     {"PyEval_EvalCode", (PYTHON_PROC*)&PyEval_EvalCode},
+# else
+    {"PyRun_SimpleString", (PYTHON_PROC*)&py3_PyRun_SimpleString},
+    {"PyRun_String", (PYTHON_PROC*)&py3_PyRun_String},
 # endif
     {"PyObject_GetAttrString", (PYTHON_PROC*)&py3_PyObject_GetAttrString},
     {"PyObject_HasAttrString", (PYTHON_PROC*)&py3_PyObject_HasAttrString},
@@ -666,14 +670,14 @@ static struct
 # endif
     {"PyUnicode_CompareWithASCIIString", (PYTHON_PROC*)&py3_PyUnicode_CompareWithASCIIString},
     {"PyUnicode_AsUTF8String", (PYTHON_PROC*)&py3_PyUnicode_AsUTF8String},
-# ifndef Py_UNICODE_USE_UCS_FUNCTIONS
-    {"PyUnicode_FromFormat", (PYTHON_PROC*)&py3_PyUnicode_FromFormat},
-# else
+# ifdef Py_UNICODE_USE_UCS_FUNCTIONS
 #  ifdef Py_UNICODE_WIDE
     {"PyUnicodeUCS4_FromFormat", (PYTHON_PROC*)&py3_PyUnicodeUCS4_FromFormat},
 #  else
     {"PyUnicodeUCS2_FromFormat", (PYTHON_PROC*)&py3_PyUnicodeUCS2_FromFormat},
 #  endif
+# else
+    {"PyUnicode_FromFormat", (PYTHON_PROC*)&py3_PyUnicode_FromFormat},
 # endif
     {"PyBytes_AsString", (PYTHON_PROC*)&py3_PyBytes_AsString},
     {"PyBytes_AsStringAndSize", (PYTHON_PROC*)&py3_PyBytes_AsStringAndSize},
@@ -696,8 +700,9 @@ static struct
 # endif
     {"PySlice_Type", (PYTHON_PROC*)&py3_PySlice_Type},
     {"PyFloat_Type", (PYTHON_PROC*)&py3_PyFloat_Type},
-# if PY_VERSION_HEX < 0x030c00b0
     {"PyBool_Type", (PYTHON_PROC*)&py3_PyBool_Type},
+# if PY_VERSION_HEX >= 0x030c00b0
+    {"PyLong_Type", (PYTHON_PROC*)&py3_PyLong_Type},
 # endif
     {"PyNumber_Check", (PYTHON_PROC*)&py3_PyNumber_Check},
     {"PyNumber_Long", (PYTHON_PROC*)&py3_PyNumber_Long},
@@ -787,6 +792,42 @@ py3__PyObject_TypeCheck(PyObject *ob, PyTypeObject *type)
 #  else
 #   define _PyObject_TypeCheck(o,t) py3__PyObject_TypeCheck(o,t)
 #  endif
+# endif
+
+# if !defined(USE_LIMITED_API) && PY_VERSION_HEX >= 0x030c00b0
+// Py_SIZE() uses PyLong_Type and PyBool_Type starting from Python 3.12.
+// We need to define our own Py_SIZE() to replace Py{Bool,Long}_Type with
+// py3_Py{Bool,Long}_Type.
+// We also need to redefine PyTuple_GET_SIZE() and PyList_GET_SIZE(), because
+// they use Py_SIZE().
+    static inline Py_ssize_t
+py3_Py_SIZE(PyObject *ob)
+{
+    assert(ob->ob_type != &PyLong_Type);
+    assert(ob->ob_type != &PyBool_Type);
+    PyVarObject *var_ob = _PyVarObject_CAST(ob);
+    return var_ob->ob_size;
+}
+#  undef Py_SIZE
+#  define Py_SIZE(ob) py3_Py_SIZE(_PyObject_CAST(ob))
+
+    static inline Py_ssize_t
+py3_PyTuple_GET_SIZE(PyObject *op)
+{
+    PyTupleObject *tuple = _PyTuple_CAST(op);
+    return Py_SIZE(tuple);
+}
+#  undef PyTuple_GET_SIZE
+#  define PyTuple_GET_SIZE(op) py3_PyTuple_GET_SIZE(_PyObject_CAST(op))
+
+    static inline
+Py_ssize_t py3_PyList_GET_SIZE(PyObject *op)
+{
+    PyListObject *list = _PyList_CAST(op);
+    return Py_SIZE(list);
+}
+#  undef PyList_GET_SIZE
+#  define PyList_GET_SIZE(op) py3_PyList_GET_SIZE(_PyObject_CAST(op))
 # endif
 
 # ifdef MSWIN
@@ -1054,13 +1095,7 @@ static struct PyModuleDef vimmodule;
  */
 #include "if_py_both.h"
 
-#ifndef USE_LIMITED_API
-# if PY_VERSION_HEX >= 0x030300f0
-#  define PY_UNICODE_GET_UTF8_CHARS(obj) PyUnicode_AsUTF8AndSize(obj, NULL)
-# else
-#  define PY_UNICODE_GET_UTF8_CHARS _PyUnicode_AsString
-# endif
-#else
+#ifdef USE_LIMITED_API
 # if Py_LIMITED_API >= 0x030A0000
 #  define PY_UNICODE_GET_UTF8_CHARS(obj) PyUnicode_AsUTF8AndSize(obj, NULL)
 # else
@@ -1091,6 +1126,12 @@ static char* PY_UNICODE_GET_UTF8_CHARS(PyObject* str)
     }
     return py3_unicode_utf8_chars;
 }
+# endif
+#else	// !USE_LIMITED_API
+# if PY_VERSION_HEX >= 0x030300f0
+#  define PY_UNICODE_GET_UTF8_CHARS(obj) PyUnicode_AsUTF8AndSize(obj, NULL)
+# else
+#  define PY_UNICODE_GET_UTF8_CHARS _PyUnicode_AsString
 # endif
 #endif
 

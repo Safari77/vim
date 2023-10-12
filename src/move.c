@@ -1755,6 +1755,8 @@ scrolldown(
 	if (col > width2 && width2 > 0)
 	{
 	    row += col / width2;
+	    // even so col is not used anymore,
+	    // make sure it is correct, just in case
 	    col = col % width2;
 	}
 	if (row >= curwin->w_height)
@@ -1991,6 +1993,8 @@ adjust_skipcol(void)
     if (col > width2)
     {
 	row += col / width2;
+	// col may no longer be used, but make
+	// sure it is correct anyhow, just in case
 	col = col % width2;
     }
     if (row >= curwin->w_height)

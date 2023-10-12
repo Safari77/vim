@@ -968,7 +968,7 @@ eval_foldexpr(win_T *wp, int *cp)
 	    // If the result is a string, check if there is a non-digit before
 	    // the number.
 	    s = tv.vval.v_string;
-	    if (!VIM_ISDIGIT(*s) && *s != '-')
+	    if (*s != NUL && !VIM_ISDIGIT(*s) && *s != '-')
 		*cp = *s++;
 	    retval = atol((char *)s);
 	}
@@ -1050,11 +1050,14 @@ flag_string_T glv_flag_strings[] = {
  *	execute_instructions: ISN_LOCKUNLOCK - sets lval_root from stack.
  */
     static void
-get_lval_root(lval_T *lp, lval_root_T *lr)
+fill_lval_from_lval_root(lval_T *lp, lval_root_T *lr)
 {
 #ifdef LOG_LOCKVAR
-    ch_log(NULL, "LKVAR: get_lval_root(): name %s", lp->ll_name);
+    ch_log(NULL, "LKVAR: fill_lval_from_lval_root(): name %s, tv %p",
+						lp->ll_name, (void*)lr->lr_tv);
 #endif
+    if (lr->lr_tv == NULL)
+	return;
     if (!lr->lr_is_arg && lr->lr_tv->v_type == VAR_CLASS)
     {
 	if (lr->lr_tv->vval.v_class != NULL)
@@ -1105,26 +1108,28 @@ get_lval_check_access(
 #endif
     if (cl_exec == NULL || cl_exec != cl)
     {
+	char *msg = NULL;
 	switch (om->ocm_access)
 	{
 	    case VIM_ACCESS_PRIVATE:
-		semsg(_(e_cannot_access_private_variable_str),
-						om->ocm_name, cl->class_name);
-		return FAIL;
+		msg = e_cannot_access_private_variable_str;
+		break;
 	    case VIM_ACCESS_READ:
 		// If [idx] or .key following, read only OK.
 		if (*p == '[' || *p == '.')
 		    break;
 		if ((flags & GLV_READ_ONLY) == 0)
-		{
-		    semsg(_(e_variable_is_not_writable_str),
-						om->ocm_name, cl->class_name);
-		    return FAIL;
-		}
+		    msg = e_variable_is_not_writable_str;
 		break;
 	    case VIM_ACCESS_ALL:
 		break;
 	}
+	if (msg != NULL)
+	{
+	    emsg_var_cl_define(msg, om->ocm_name, 0, cl);
+	    return FAIL;
+	}
+
     }
     return OK;
 }
@@ -1175,15 +1180,14 @@ get_lval(
 
 #ifdef LOG_LOCKVAR
     if (lval_root == NULL)
-	ch_log(NULL,
-	       "LKVAR: get_lval(): name %s, lval_root (nil)", name);
+	ch_log(NULL, "LKVAR: get_lval(): name: %s, lval_root (nil)", name);
     else
-	ch_log(NULL,
-	   "LKVAR: get_lval(): name %s, lr_tv %p lr_is_arg %d",
-	    name, (void*)lval_root->lr_tv, lval_root->lr_is_arg);
+	ch_log(NULL, "LKVAR: get_lval(): name: %s, lr_tv %p lr_is_arg %d",
+			name, (void*)lval_root->lr_tv, lval_root->lr_is_arg);
     char buf[80];
-    ch_log(NULL, "LKVAR:    ...: GLV flags %s",
+    ch_log(NULL, "LKVAR:    ...: GLV flags: %s",
 		    flags_tostring(flags, glv_flag_strings, buf, sizeof(buf)));
+    int log_sync_root_key = FALSE;
 #endif
 
     // Clear everything in "lp".
@@ -1271,6 +1275,14 @@ get_lval(
 		    semsg(_(e_using_type_not_in_script_context_str), p);
 		    return NULL;
 		}
+		if (vim9script && (flags & GLV_NO_DECL) &&
+			!(flags & GLV_FOR_LOOP))
+		{
+		    // Using a type and not in a "var" declaration.
+		    semsg(_(e_trailing_characters_str), p);
+		    return NULL;
+		}
+
 
 		// parse the type after the name
 		lp->ll_type = parse_type(&tp,
@@ -1314,20 +1326,26 @@ get_lval(
 	}
     }
 
-    // Without [idx] or .key we are done.
-    if ((*p != '[' && *p != '.'))
+    int sync_root = FALSE;
+    if (vim9script && lval_root != NULL)
+    {
+	cl_exec = lval_root->lr_cl_exec;
+	sync_root = lval_root->lr_sync_root;
+    }
+
+    // Without [idx] or .key we are done, unless doing sync_root.
+    if (*p != '[' && *p != '.' && (*name == NUL || !sync_root))
     {
 	if (lval_root != NULL)
-	    get_lval_root(lp, lval_root);
+	    fill_lval_from_lval_root(lp, lval_root);
 	return p;
     }
 
-    if (vim9script && lval_root != NULL)
+    if (vim9script && lval_root != NULL && lval_root->lr_tv != NULL)
     {
 	// using local variable
 	lp->ll_tv = lval_root->lr_tv;
 	v = NULL;
-	cl_exec = lval_root->lr_cl_exec;
     }
     else
     {
@@ -1357,7 +1375,7 @@ get_lval(
      */
     var1.v_type = VAR_UNKNOWN;
     var2.v_type = VAR_UNKNOWN;
-    while (*p == '[' || (*p == '.' && p[1] != '=' && p[1] != '.'))
+    while (*p == '[' || (*p == '.' && p[1] != '=' && p[1] != '.') || sync_root)
     {
 	vartype_T v_type = lp->ll_tv->v_type;
 
@@ -1366,7 +1384,8 @@ get_lval(
 		      && v_type != VAR_CLASS)
 	{
 	    if (!quiet)
-		semsg(_(e_dot_can_only_be_used_on_dictionary_str), name);
+		semsg(_(e_dot_not_allowed_after_str_str),
+						vartype_name(v_type), name);
 	    return NULL;
 	}
 	if (v_type != VAR_LIST
@@ -1376,7 +1395,8 @@ get_lval(
 		&& v_type != VAR_CLASS)
 	{
 	    if (!quiet)
-		emsg(_(e_can_only_index_list_dictionary_or_blob));
+		semsg(_(e_index_not_allowed_after_str_str),
+						vartype_name(v_type), name);
 	    return NULL;
 	}
 
@@ -1395,6 +1415,10 @@ get_lval(
 		emsg(_(e_slice_must_come_last));
 	    return NULL;
 	}
+#ifdef LOG_LOCKVAR
+	ch_log(NULL, "LKVAR: get_lval() loop: p: %s, type: %s", p,
+							vartype_name(v_type));
+#endif
 
 	if (vim9script && lp->ll_valtype == NULL
 		&& v != NULL
@@ -1405,11 +1429,29 @@ get_lval(
 
 	    // Vim9 script local variable: get the type
 	    if (sv != NULL)
+	    {
 		lp->ll_valtype = sv->sv_type;
+#ifdef LOG_LOCKVAR
+		ch_log(NULL, "LKVAR:    ... loop: vim9 assign type: %s",
+					vartype_name(lp->ll_valtype->tt_type));
+#endif
+	    }
 	}
 
 	len = -1;
-	if (*p == '.')
+	if (sync_root)
+	{
+	    // For example, the first token is a member variable name and
+	    // lp->ll_tv is a class/object.
+	    // Process it directly without looking for "[idx]" or ".name".
+	    key = name;
+	    sync_root = FALSE;  // only first time through
+#ifdef LOG_LOCKVAR
+	    log_sync_root_key = TRUE;
+	    ch_log(NULL, "LKVAR:    ... loop: name: %s, sync_root", name);
+#endif
+	}
+	else if (*p == '.')
 	{
 	    key = p + 1;
 	    for (len = 0; ASCII_ISALNUM(key[len]) || key[len] == '_'; ++len)
@@ -1500,6 +1542,17 @@ get_lval(
 	    // Skip to past ']'.
 	    ++p;
 	}
+#ifdef LOG_LOCKVAR
+	if (log_sync_root_key)
+	    ch_log(NULL, "LKVAR:    ... loop: p: %s, sync_root key: %s", p,
+									key);
+	else if (len == -1)
+	    ch_log(NULL, "LKVAR:    ... loop: p: %s, '[' key: %s", p,
+				empty1 ? ":" : (char*)tv_get_string(&var1));
+	else
+	    ch_log(NULL, "LKVAR:    ... loop: p: %s, '.' key: %s", p, key);
+	log_sync_root_key = FALSE;
+#endif
 
 	if (v_type == VAR_DICT)
 	{
@@ -1688,8 +1741,14 @@ get_lval(
 	    lp->ll_list = NULL;
 
 	    class_T *cl;
-	    if (v_type == VAR_OBJECT && lp->ll_tv->vval.v_object != NULL)
+	    if (v_type == VAR_OBJECT)
 	    {
+		if (lp->ll_tv->vval.v_object == NULL)
+		{
+		    if (!quiet)
+			emsg(_(e_using_null_object));
+		    return NULL;
+		}
 	        cl = lp->ll_tv->vval.v_object->obj_class;
 	        lp->ll_object = lp->ll_tv->vval.v_object;
 	    }
@@ -1729,10 +1788,6 @@ get_lval(
 		    }
 		}
 
-		// TODO: dont' check access if inside class
-		// TODO: is GLV_READ_ONLY the right thing to use
-		//	     for class/object member access?
-		//	     Probably in some cases. Need inside class check
 		if (lp->ll_valtype == NULL)
 		{
 		    int		m_idx;

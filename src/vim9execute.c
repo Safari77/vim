@@ -559,6 +559,12 @@ call_dfunc(
 				     arg_to_add + STACK_FRAME_SIZE + varcount))
 	return FAIL;
 
+    // The object pointer is in the execution typval stack.  The GA_GROW call
+    // above may have reallocated the execution typval stack.  So the object
+    // pointer may not be valid anymore.  Get the object pointer again from the
+    // execution stack.
+    obj = STACK_TV_BOT(0) - argcount - vararg_count - 1;
+
     // If depth of calling is getting too high, don't execute the function.
     if (funcdepth_increment() == FAIL)
 	return FAIL;
@@ -917,6 +923,41 @@ static ectx_T *current_ectx = NULL;
 in_def_function(void)
 {
     return current_ectx != NULL;
+}
+
+/*
+ * If executing a class/object method, then fill in the lval_T.
+ * Set lr_tv to the executing item, and lr_exec_class to the executing class;
+ * use free_tv and class_unref when finished with the lval_root.
+ * For use by builtin functions.
+ *
+ * Return FAIL and do nothing if not executing in a class; otherwise OK.
+ */
+    int
+fill_exec_lval_root(lval_root_T *root)
+{
+    ectx_T *ectx = current_ectx;
+    if (ectx != NULL)
+    {
+	dfunc_T	    *dfunc = ((dfunc_T *)def_functions.ga_data)
+						  + current_ectx->ec_dfunc_idx;
+	ufunc_T    *ufunc = dfunc->df_ufunc;
+	if (ufunc->uf_class != NULL)	// executing a method?
+	{
+	    typval_T *tv = alloc_tv();
+	    if (tv != NULL)
+	    {
+		CLEAR_POINTER(root);
+		root->lr_tv = tv;
+		copy_tv(STACK_TV_VAR(0), root->lr_tv);
+		root->lr_cl_exec = ufunc->uf_class;
+		++root->lr_cl_exec->class_refcount;
+		return OK;
+	    }
+	}
+    }
+
+    return FAIL;
 }
 
 /*
@@ -2180,8 +2221,8 @@ execute_storeindex(isn_T *iptr, ectx_T *ectx)
 	    {
 		if (*member == '_')
 		{
-		    semsg(_(e_cannot_access_private_variable_str),
-						m->ocm_name, cl->class_name);
+		    emsg_var_cl_define(e_cannot_access_private_variable_str,
+							m->ocm_name, 0, cl);
 		    status = FAIL;
 		}
 
@@ -4179,21 +4220,20 @@ exec_instructions(ectx_T *ectx)
 
 	    case ISN_LOCKUNLOCK:
 		{
-		    lval_root_T	*lval_root_save = lval_root;
-		    int		res;
 #ifdef LOG_LOCKVAR
 		    ch_log(NULL, "LKVAR: execute INS_LOCKUNLOCK isn_arg %s",
 							iptr->isn_arg.string);
 #endif
+		    lval_root_T	*lval_root_save = lval_root;
 
 		    // Stack has the local variable, argument the whole :lock
 		    // or :unlock command, like ISN_EXEC.
 		    --ectx->ec_stack.ga_len;
-		    lval_root_T root = { STACK_TV_BOT(0),
-					iptr->isn_arg.lockunlock.lu_cl_exec,
-					iptr->isn_arg.lockunlock.lu_is_arg };
+		    lval_root_T root = { .lr_tv = STACK_TV_BOT(0),
+			    .lr_cl_exec = iptr->isn_arg.lockunlock.lu_cl_exec,
+			    .lr_is_arg  = iptr->isn_arg.lockunlock.lu_is_arg };
 		    lval_root = &root;
-		    res = exec_command(iptr,
+		    int res = exec_command(iptr,
 					iptr->isn_arg.lockunlock.lu_string);
 		    clear_tv(root.lr_tv);
 		    lval_root = lval_root_save;
