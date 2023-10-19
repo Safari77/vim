@@ -379,6 +379,8 @@ compile_class_object_index(cctx_T *cctx, char_u **arg, type_T *type)
 	    }
 	    if (type->tt_type == VAR_CLASS)
 	    {
+		// Remove the class type from the stack
+		--cctx->ctx_type_stack.ga_len;
 		if (generate_CLASSMEMBER(cctx, TRUE, cl, m_idx) == FAIL)
 		    return FAIL;
 	    }
@@ -450,9 +452,9 @@ compile_class_object_index(cctx_T *cctx, char_u **arg, type_T *type)
 		return FAIL;
 	    }
 	    *arg = name_end;
-	    if (type->tt_type == VAR_OBJECT)
-		return generate_FUNCREF(cctx, fp, cl, TRUE, m_idx, NULL);
-	    return generate_FUNCREF(cctx, fp, NULL, FALSE, 0, NULL);
+	    // Remove the object type from the stack
+	    --cctx->ctx_type_stack.ga_len;
+	    return generate_FUNCREF(cctx, fp, cl, TRUE, m_idx, NULL);
 	}
 
 	member_not_found_msg(cl, VAR_OBJECT, name, len);
@@ -475,6 +477,8 @@ compile_class_object_index(cctx_T *cctx, char_u **arg, type_T *type)
 	    }
 
 	    *arg = name_end;
+	    // Remove the class type from the stack
+	    --cctx->ctx_type_stack.ga_len;
 	    return generate_CLASSMEMBER(cctx, TRUE, cl, idx);
 	}
 
@@ -490,9 +494,9 @@ compile_class_object_index(cctx_T *cctx, char_u **arg, type_T *type)
 		return FAIL;
 	    }
 	    *arg = name_end;
-	    if (type->tt_type == VAR_CLASS)
-		return generate_FUNCREF(cctx, fp, cl, FALSE, m_idx, NULL);
-	    return generate_FUNCREF(cctx, fp, NULL, FALSE, 0, NULL);
+	    // Remove the class type from the stack
+	    --cctx->ctx_type_stack.ga_len;
+	    return generate_FUNCREF(cctx, fp, cl, FALSE, m_idx, NULL);
 	}
 
 	member_not_found_msg(cl, VAR_CLASS, name, len);
