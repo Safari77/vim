@@ -1558,25 +1558,26 @@ early_ret:
 	    }
 
 	    if (!is_class)
-		// ignore "abstract" in an interface (as all the methods in an
-		// interface are abstract.
-		p = skipwhite(pa + 8);
-	    else
 	    {
-		if (!is_abstract)
-		{
-		    semsg(_(e_abstract_method_in_concrete_class), pa);
-		    break;
-		}
-
-		abstract_method = TRUE;
-		p = skipwhite(pa + 8);
-		if (STRNCMP(p, "def", 3) != 0 && STRNCMP(p, "static", 6) != 0)
-		{
-		    emsg(_(e_abstract_must_be_followed_by_def_or_static));
-		    break;
-		}
+		// "abstract" not supported in an interface
+		emsg(_(e_abstract_cannot_be_used_in_interface));
+		break;
 	    }
+
+	    if (!is_abstract)
+	    {
+		semsg(_(e_abstract_method_in_concrete_class), pa);
+		break;
+	    }
+
+	    p = skipwhite(pa + 8);
+	    if (STRNCMP(p, "def", 3) != 0)
+	    {
+		emsg(_(e_abstract_must_be_followed_by_def));
+		break;
+	    }
+
+	    abstract_method = TRUE;
 	}
 
 	int has_static = FALSE;
