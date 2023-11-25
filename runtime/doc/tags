@@ -4514,6 +4514,7 @@ E1507	builtin.txt	/*E1507*
 E1508	editing.txt	/*E1508*
 E1509	editing.txt	/*E1509*
 E151	helphelp.txt	/*E151*
+E1510	change.txt	/*E1510*
 E152	helphelp.txt	/*E152*
 E153	helphelp.txt	/*E153*
 E154	helphelp.txt	/*E154*
@@ -10998,6 +10999,7 @@ vim-modes-intro	intro.txt	/*vim-modes-intro*
 vim-raku	ft_raku.txt	/*vim-raku*
 vim-script-intro	usr_41.txt	/*vim-script-intro*
 vim-script-library	eval.txt	/*vim-script-library*
+vim-security	intro.txt	/*vim-security*
 vim-use	intro.txt	/*vim-use*
 vim-variable	eval.txt	/*vim-variable*
 vim.b	if_lua.txt	/*vim.b*
