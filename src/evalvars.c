@@ -1836,11 +1836,8 @@ ex_let_one(
 	return NULL;
     }
 
-    if (tv->v_type == VAR_TYPEALIAS)
-    {
-	semsg(_(e_using_typealias_as_value), tv->vval.v_typealias->ta_name);
+    if (check_typval_is_value(tv) == FAIL)
 	return NULL;
-    }
 
     if (*arg == '$')
     {
@@ -3981,7 +3978,6 @@ set_var_const(
 	    {
 		semsg(_(e_cannot_modify_typealias),
 					    di->di_tv.vval.v_typealias->ta_name);
-		clear_tv(&di->di_tv);
 		goto failed;
 	    }
 
