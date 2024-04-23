@@ -3440,7 +3440,12 @@ did_set_showbreak(optset_T *args)
     char *
 did_set_showcmdloc(optset_T *args UNUSED)
 {
-    return did_set_opt_strings(p_sloc, p_sloc_values, FALSE);
+    char	*errmsg = did_set_opt_strings(p_sloc, p_sloc_values, FALSE);
+
+    if (errmsg == NULL)
+	comp_col();
+
+    return errmsg;
 }
 
     int
@@ -4327,7 +4332,7 @@ do_filetype_autocmd(char_u **varp, int opt_flags, int value_changed)
     secure = 0;
 
     ++ft_recursive;
-    did_filetype = TRUE;
+    curbuf->b_did_filetype = TRUE;
     // Only pass TRUE for "force" when the value changed or not
     // used recursively, to avoid endless recurrence.
     apply_autocmds(EVENT_FILETYPE, curbuf->b_p_ft, curbuf->b_fname,

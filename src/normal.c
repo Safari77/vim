@@ -1708,6 +1708,7 @@ add_to_showcmd(int c)
     int		extra_len;
     int		overflow;
     int		i;
+    char_u	mbyte_buf[MB_MAXBYTES];
     static int	ignore[] =
     {
 #ifdef FEAT_GUI
@@ -1739,9 +1740,17 @@ add_to_showcmd(int c)
 	    if (ignore[i] == c)
 		return FALSE;
 
-    p = transchar(c);
-    if (*p == ' ')
-	STRCPY(p, "<20>");
+    if (c <= 0x7f || !vim_isprintc(c))
+    {
+	p = transchar(c);
+	if (*p == ' ')
+	    STRCPY(p, "<20>");
+    }
+    else
+    {
+	mbyte_buf[(*mb_char2bytes)(c, mbyte_buf)] = NUL;
+	p = mbyte_buf;
+    }
     old_len = (int)STRLEN(showcmd_buf);
     extra_len = (int)STRLEN(p);
     overflow = old_len + extra_len - SHOWCMD_COLS;
@@ -1810,7 +1819,7 @@ pop_showcmd(void)
     static void
 display_showcmd(void)
 {
-    int	    len = (int)STRLEN(showcmd_buf);
+    int	    len = vim_strsize(showcmd_buf);
 
     showcmd_is_clear = (len == 0);
     cursor_off();
@@ -2066,7 +2075,7 @@ nv_page(cmdarg_T *cap)
 	    goto_tabpage((int)cap->count0);
     }
     else
-	(void)onepage(cap->arg, cap->count1);
+	(void)pagescroll(cap->arg, cap->count1, FALSE);
 }
 
 /*
@@ -2303,10 +2312,12 @@ find_decl(
  *
  * Return OK if able to move cursor, FAIL otherwise.
  */
-    static int
+    int
 nv_screengo(oparg_T *oap, int dir, long dist)
 {
-    int		linelen = linetabsize(curwin, curwin->w_cursor.lnum);
+
+    int		linelen = linetabsize_no_outer(curwin, curwin->w_cursor.lnum);
+
     int		retval = OK;
     int		atend = FALSE;
     int		n;
@@ -2376,7 +2387,7 @@ nv_screengo(oparg_T *oap, int dir, long dist)
 		}
 		cursor_up_inner(curwin, 1);
 
-		linelen = linetabsize(curwin, curwin->w_cursor.lnum);
+		linelen = linetabsize_no_outer(curwin, curwin->w_cursor.lnum);
 		if (linelen > width1)
 		    curwin->w_curswant += (((linelen - width1 - 1) / width2)
 								+ 1) * width2;
@@ -2413,7 +2424,7 @@ nv_screengo(oparg_T *oap, int dir, long dist)
 		// clipped to column 0.
 		if (curwin->w_curswant >= width1)
 		    curwin->w_curswant -= width2;
-		linelen = linetabsize(curwin, curwin->w_cursor.lnum);
+		linelen = linetabsize_no_outer(curwin, curwin->w_cursor.lnum);
 	    }
 	}
       }
@@ -2469,65 +2480,6 @@ nv_scroll_line(cmdarg_T *cap)
 {
     if (!checkclearop(cap->oap))
 	scroll_redraw(cap->arg, cap->count1);
-}
-
-/*
- * Scroll "count" lines up or down, and redraw.
- */
-    void
-scroll_redraw(int up, long count)
-{
-    linenr_T	prev_topline = curwin->w_topline;
-    int		prev_skipcol = curwin->w_skipcol;
-#ifdef FEAT_DIFF
-    int		prev_topfill = curwin->w_topfill;
-#endif
-    linenr_T	prev_lnum = curwin->w_cursor.lnum;
-
-    if (up)
-	scrollup(count, TRUE);
-    else
-	scrolldown(count, TRUE);
-    if (get_scrolloff_value() > 0)
-    {
-	// Adjust the cursor position for 'scrolloff'.  Mark w_topline as
-	// valid, otherwise the screen jumps back at the end of the file.
-	cursor_correct();
-	check_cursor_moved(curwin);
-	curwin->w_valid |= VALID_TOPLINE;
-
-	// If moved back to where we were, at least move the cursor, otherwise
-	// we get stuck at one position.  Don't move the cursor up if the
-	// first line of the buffer is already on the screen
-	while (curwin->w_topline == prev_topline
-		&& curwin->w_skipcol == prev_skipcol
-#ifdef FEAT_DIFF
-		&& curwin->w_topfill == prev_topfill
-#endif
-		)
-	{
-	    if (up)
-	    {
-		if (curwin->w_cursor.lnum > prev_lnum
-			|| cursor_down(1L, FALSE) == FAIL)
-		    break;
-	    }
-	    else
-	    {
-		if (curwin->w_cursor.lnum < prev_lnum
-			|| prev_topline == 1L
-			|| cursor_up(1L, FALSE) == FAIL)
-		    break;
-	    }
-	    // Mark w_topline as valid, otherwise the screen jumps back at the
-	    // end of the file.
-	    check_cursor_moved(curwin);
-	    curwin->w_valid |= VALID_TOPLINE;
-	}
-    }
-    if (curwin->w_cursor.lnum != prev_lnum)
-	coladvance(curwin->w_curswant);
-    redraw_later(UPD_VALID);
 }
 
 /*
@@ -4073,6 +4025,9 @@ nv_gotofile(cmdarg_T *cap)
 	return;
 #endif
 
+    if (!check_can_set_curbuf_disabled())
+      return;
+
     ptr = grab_file_name(cap->count1, &lnum);
 
     if (ptr != NULL)
@@ -4475,7 +4430,8 @@ nv_brackets(cmdarg_T *cap)
 		SAFE_isupper(cap->nchar) ? ACTION_SHOW_ALL :
 			    SAFE_islower(cap->nchar) ? ACTION_SHOW : ACTION_GOTO,
 		cap->cmdchar == ']' ? curwin->w_cursor.lnum + 1 : (linenr_T)1,
-		(linenr_T)MAXLNUM);
+		(linenr_T)MAXLNUM,
+	        FALSE);
 	    vim_free(ptr);
 	    curwin->w_set_curswant = TRUE;
 	}
@@ -5739,7 +5695,7 @@ nv_gv_cmd(cmdarg_T *cap)
  * "g0", "g^" : Like "0" and "^" but for screen lines.
  * "gm": middle of "g0" and "g$".
  */
-    static void
+    void
 nv_g_home_m_cmd(cmdarg_T *cap)
 {
     int		i;
@@ -5765,6 +5721,15 @@ nv_g_home_m_cmd(cmdarg_T *cap)
 	i = 0;
 	if (virtcol >= (colnr_T)width1 && width2 > 0)
 	    i = (virtcol - width1) / width2 * width2 + width1;
+
+	// When ending up below 'smoothscroll' marker, move just beyond it so
+	// that skipcol is not adjusted later.
+	if (curwin->w_skipcol > 0 && curwin->w_cursor.lnum == curwin->w_topline)
+	{
+	    int overlap = sms_marker_overlap(curwin, -1);
+	    if (overlap > 0 && i == curwin->w_skipcol)
+		i += overlap;
+	}
     }
     else
 	i = curwin->w_leftcol;
@@ -6060,7 +6025,7 @@ nv_g_cmd(cmdarg_T *cap)
 	{
 	    oap->motion_type = MCHAR;
 	    oap->inclusive = FALSE;
-	    i = linetabsize(curwin, curwin->w_cursor.lnum);
+	    i = linetabsize_no_outer(curwin, curwin->w_cursor.lnum);
 	    if (cap->count0 > 0 && cap->count0 <= 100)
 		coladvance((colnr_T)(i * cap->count0 / 100));
 	    else
@@ -7257,12 +7222,9 @@ nv_at(cmdarg_T *cap)
     static void
 nv_halfpage(cmdarg_T *cap)
 {
-    if ((cap->cmdchar == Ctrl_U && curwin->w_cursor.lnum == 1)
-	    || (cap->cmdchar == Ctrl_D
-		&& curwin->w_cursor.lnum == curbuf->b_ml.ml_line_count))
-	clearopbeep(cap->oap);
-    else if (!checkclearop(cap->oap))
-	halfpage(cap->cmdchar == Ctrl_D, cap->count0);
+    int	dir = cap->cmdchar == Ctrl_D ? FORWARD : BACKWARD;
+    if (!checkclearop(cap->oap))
+	pagescroll(dir, cap->count0, TRUE);
 }
 
 /*
@@ -7323,6 +7285,9 @@ nv_put_opt(cmdarg_T *cap, int fix_indent)
     int		dir;
     int		flags = 0;
     int		keep_registers = FALSE;
+#ifdef FEAT_FOLDING
+    int		save_fen = curwin->w_p_fen;
+#endif
 
     if (cap->oap->op_type != OP_NOP)
     {
@@ -7388,6 +7353,12 @@ nv_put_opt(cmdarg_T *cap, int fix_indent)
 	    reg1 = get_register(regname, TRUE);
 	}
 
+#ifdef FEAT_FOLDING
+	// Temporarily disable folding, as deleting a fold marker may cause
+	// the cursor to be included in a fold.
+	curwin->w_p_fen = FALSE;
+#endif
+
 	// Now delete the selected text. Avoid messages here.
 	cap->cmdchar = 'd';
 	cap->nchar = NUL;
@@ -7435,10 +7406,14 @@ nv_put_opt(cmdarg_T *cap, int fix_indent)
     if (reg2 != NULL)
 	put_register(regname, reg2);
 
-    // What to reselect with "gv"?  Selecting the just put text seems to
-    // be the most useful, since the original text was removed.
     if (was_visual)
     {
+#ifdef FEAT_FOLDING
+	if (save_fen)
+	    curwin->w_p_fen = TRUE;
+#endif
+	// What to reselect with "gv"?  Selecting the just put text seems to
+	// be the most useful, since the original text was removed.
 	curbuf->b_visual.vi_start = curbuf->b_op_start;
 	curbuf->b_visual.vi_end = curbuf->b_op_end;
 	// need to adjust cursor position

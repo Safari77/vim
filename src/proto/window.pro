@@ -1,4 +1,6 @@
 /* window.c */
+int check_can_set_curbuf_disabled(void);
+int check_can_set_curbuf_forceit(int forceit);
 int window_layout_locked(enum CMD_index cmd);
 win_T *prevwin_curwin(void);
 win_T *swbuf_goto_win_with_buf(buf_T *buf);
@@ -55,6 +57,7 @@ tabpage_T *win_find_tabpage(win_T *win);
 win_T *win_vert_neighbor(tabpage_T *tp, win_T *wp, int up, long count);
 win_T *win_horz_neighbor(tabpage_T *tp, win_T *wp, int left, long count);
 void win_enter(win_T *wp, int undo_sync);
+void win_fix_current_dir(void);
 win_T *buf_jump_open_win(buf_T *buf);
 win_T *buf_jump_open_tab(buf_T *buf);
 int win_unlisted(win_T *wp);
@@ -96,4 +99,5 @@ int win_hasvertsplit(void);
 int get_win_number(win_T *wp, win_T *first_win);
 int get_tab_number(tabpage_T *tp);
 char *check_colorcolumn(win_T *wp);
+int get_last_winid(void);
 /* vim: set ft=c : */
