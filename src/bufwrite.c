@@ -19,8 +19,6 @@
 
 #define SMALLBUFSIZE	256	// size of emergency write buffer
 
-extern int vim_copy(char_u *from, char_u *to);
-
 /*
  * Structure to pass arguments from buf_write() to buf_write_bytes().
  */
@@ -1596,7 +1594,7 @@ buf_write(
 
 		    // If the renaming of the original file to the backup file
 		    // works, quit here.
-		    ret = vim_copy(fname, backup);
+		    ret = vim_copyfile(fname, backup);
 		    if (ret == 0) {
 			break;
 		    } else if (ret == 1) {
