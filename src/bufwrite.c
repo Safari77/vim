@@ -1792,7 +1792,7 @@ buf_write(
 	else
 	{
 	if ((wfname == fname) && can_write_dir && !append) {
-	    snprintf(wftmp, sizeof(wftmp), "%s.vimtemp-XXXXXX", wfname);
+	    snprintf(wftmp, sizeof(wftmp), "%s.tmp.XXXXXX", wfname);
 	    fd = mkstemp(wftmp);
 	    if (fd == -1) {
 		errmsg = (char_u *)_("E212: Can't open file for writing");
