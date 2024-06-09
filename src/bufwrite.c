@@ -608,6 +608,21 @@ new_file_message(void)
 }
 
 /*
+ * make test filename for testing can directory be written
+ */
+static char_u *make_testfn(char_u *fn) {
+    char_u *fnpath;
+    char_u fnfile [MAXPATHL+1];
+
+    vim_strncpy(fnfile, fn, sizeof(fnfile)-1);
+    *gettail(fnfile) = NUL;
+    fnpath = alloc(MAXPATHL+1);
+    if (fnpath == NULL) return NULL;
+    vim_snprintf(fnpath, MAXPATHL, "%s%s", fnfile, "vimfiletest.XXXXXX");
+    return fnpath;
+}
+
+/*
  * buf_write() - write to file "fname" lines "start" through "end"
  *
  * We do our own buffering here because fwrite() is so slow.
@@ -650,6 +665,7 @@ buf_write(
     char_u	    *s;
     char_u	    *ptr;
     char_u	    c;
+    char_u	    *tmp_fname;
     int		    len;
     linenr_T	    lnum;
     long	    nchars;
@@ -1049,14 +1065,14 @@ buf_write(
     st_old.st_ino = 0;
     perm = -1;
     if (mch_stat((char *)fname, &st_old) < 0) {
+        int tmp_fd;
+
 	newfile = TRUE;
-        sprintf(IObuff, "%s", fname);
-        sprintf(gettail(IObuff), "%s", "vimfiletest.XXXXXX");
-        fd = mkstemp(IObuff);
-        if (fd != -1) {
-            can_write_dir = 1;
-            close(fd);
-            mch_remove(IObuff);
+        tmp_fname = make_testfn(fname);
+        if ((tmp_fd = mkstemp(tmp_fname)) != -1) {
+		can_write_dir = 1;
+                close(tmp_fd);
+                vim_free(tmp_fname);
         }
     } else {
 	perm = st_old.st_mode;
@@ -1085,16 +1101,15 @@ buf_write(
         * the ones from the original file.
         * First find a file name that doesn't exist yet.
         */
-	sprintf(IObuff, "%s", fname);
-	sprintf(gettail(IObuff), "%s", "vimfiletest.XXXXXX");
-	fd = mkstemp(IObuff);
+        tmp_fname = make_testfn(fname);
+	fd = mkstemp(tmp_fname);
 	if (fd != -1) {
 #ifdef UNIX
 # ifdef HAVE_FCHOWN
 	    fchown(fd, st_old.st_uid, st_old.st_gid);
 	    fchmod(fd, perm);
 # endif
-	    if (mch_stat((char *)IObuff, &st) == 0
+	    if (mch_stat((char *)tmp_fname, &st) == 0
 		&& st.st_uid == st_old.st_uid
 		&& st.st_gid == st_old.st_gid
 		&& st.st_mode == perm)
@@ -1105,7 +1120,8 @@ buf_write(
 	    /* Close the file before removing it, on MS-Windows we
 	     * can't delete an open file. */
 	    close(fd);
-	    mch_remove(IObuff);
+	    mch_remove(tmp_fname);
+	    vim_free(tmp_fname);
 	}
     }
 #else // !UNIX
@@ -1790,7 +1806,7 @@ buf_write(
 	else
 	{
 	if ((wfname == fname) && can_write_dir && !append) {
-	    snprintf(wftmp, sizeof(wftmp), "%s.tmp.XXXXXX", wfname);
+	    vim_snprintf(wftmp, sizeof(wftmp), "%s.tmp.XXXXXX", wfname);
 	    fd = mkstemp(wftmp);
 	    if (fd == -1) {
 		errmsg = (char_u *)_("E212: Can't open file for writing");
