@@ -4017,7 +4017,7 @@ vim_copyfile(char_u *from, char_u *to)
     }
     if (mch_rename(tmpfn, to) == -1) {
        errmsg = _("E999: Error renaming \"%s\"");
-       mch_remove(tmpfn);                                                                                             
+       mch_remove(tmpfn);
     }
 
     if (errmsg != NULL)
