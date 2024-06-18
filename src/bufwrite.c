@@ -1072,6 +1072,7 @@ buf_write(
         if ((tmp_fd = mkstemp(tmp_fname)) != -1) {
 		can_write_dir = 1;
                 close(tmp_fd);
+		mch_remove(tmp_fname);
                 vim_free(tmp_fname);
         }
     } else {
