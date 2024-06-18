@@ -11,6 +11,7 @@ src/objects
 src/types.vim
 /.github/
 /src/link.cmd
+/src/po/*.po
 
 # We do need src/auto/configure.
 src/auto/config.cache
