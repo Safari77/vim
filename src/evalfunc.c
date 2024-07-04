@@ -7535,7 +7535,7 @@ f_index(typval_T *argvars, typval_T *rettv)
 	{
 	    tv.v_type = VAR_NUMBER;
 	    tv.vval.v_number = blob_get(b, idx);
-	    if (tv_equal(&tv, &argvars[1], ic, FALSE))
+	    if (tv_equal(&tv, &argvars[1], ic))
 	    {
 		rettv->vval.v_number = idx;
 		return;
@@ -7568,7 +7568,7 @@ f_index(typval_T *argvars, typval_T *rettv)
     }
 
     for ( ; item != NULL; item = item->li_next, ++idx)
-	if (tv_equal(&item->li_tv, &argvars[1], ic, FALSE))
+	if (tv_equal(&item->li_tv, &argvars[1], ic))
 	{
 	    rettv->vval.v_number = idx;
 	    break;
@@ -9267,47 +9267,47 @@ f_test_srand_seed(typval_T *argvars, typval_T *rettv UNUSED)
     static void
 init_srand(UINT32_T *x)
 {
-#ifndef MSWIN
-    static int getrandom_state = NOTDONE;  // FAIL or OK once tried
-#endif
+    struct {
+	union {
+	    UINT32_T number;
+	    char_u   bytes[sizeof(UINT32_T)];
+	} contents;
+    } buf;
 
     if (srand_seed_for_testing_is_used)
     {
 	*x = srand_seed_for_testing;
 	return;
     }
-#ifndef MSWIN
-    if (getrandom_state != FAIL)
+
+    if (mch_get_random(buf.contents.bytes, sizeof(buf.contents.bytes)) == OK)
     {
-	os_getrandom(x, sizeof(UINT32_T));
-	getrandom_state = OK;
+	*x = buf.contents.number;
+	return;
     }
-    if (getrandom_state != OK)
+
+    // The system's random number generator doesn't work, fall back to:
+    // - randombytes_random()
+    // - reltime() or time()
+    // - XOR with process ID
+#if defined(FEAT_SODIUM)
+    if (crypt_sodium_init() >= 0)
+	*x = crypt_sodium_randombytes_random();
+    else
 #endif
     {
-	// Reading /dev/urandom doesn't work, fall back to:
-	// - randombytes_random()
-	// - reltime() or time()
-	// - XOR with process ID
-#if defined(FEAT_SODIUM)
-	if (crypt_sodium_init() >= 0)
-	    *x = crypt_sodium_randombytes_random();
-	else
-#endif
-	{
 #if defined(FEAT_RELTIME)
-	    proftime_T res;
-	    profile_start(&res);
+	proftime_T res;
+	profile_start(&res);
 #  if defined(MSWIN)
-	    *x = (UINT32_T)res.LowPart;
+	*x = (UINT32_T)res.LowPart;
 #  else
-	    *x = (UINT32_T)res.tv_fsec;
+	*x = (UINT32_T)res.tv_fsec;
 #  endif
 #else
-	    *x = vim_time();
+	*x = vim_time();
 #endif
-	    *x ^= mch_get_pid();
-	}
+	*x ^= mch_get_pid();
     }
 }
 

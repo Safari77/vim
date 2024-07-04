@@ -406,13 +406,13 @@ mch_signal(int sig, sighandler_T func)
 #endif
 }
 
-void os_getrandom(void *buf, size_t len)
+int mch_get_random(char_u *buf, int len)
 {
     ssize_t written;
     uint8_t *p = buf;
 
-    if (len > INT_MAX) {
-        smsg("os_getrandom: requested %zu bytes\n", len);
+    if (len <= 0) {
+        smsg("mch_get_random: requested %d bytes\n", len);
         exit(1);
     }
 
@@ -422,13 +422,14 @@ void os_getrandom(void *buf, size_t len)
                written = getrandom(p, len, 0);
        } while ((written == -1) && (errno == EINTR));
        if (written <= 0) {
-	       smsg("os_getrandom: getrandom failed: %s\n",
+	       smsg("mch_get_random: getrandom failed: %s\n",
                     strerror(errno));
                exit(1);
        }
        p += written;
        len -= written;
    }
+   return OK;
 }
 
     int

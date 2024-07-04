@@ -389,8 +389,8 @@ sha2_seed(
     char_u *salt,
     int    salt_len)
 {
-    os_getrandom(header, header_len);
-    if (salt) os_getrandom(salt, salt_len);
+    mch_get_random(header, header_len);
+    if (salt) mch_get_random(salt, salt_len);
 }
 
 #endif // FEAT_CRYPT

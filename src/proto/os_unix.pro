@@ -1,6 +1,5 @@
 /* os_unix.c */
 sighandler_T mch_signal(int sig, sighandler_T func);
-void os_getrandom(void*, size_t);
 int mch_chdir(char *path);
 void mch_write(char_u *s, int len);
 int mch_inchar(char_u *buf, int maxlen, long wtime, int tb_change_cnt);
@@ -77,6 +76,7 @@ int mch_rename(const char *src, const char *dest);
 int gpm_available(void);
 int gpm_enabled(void);
 int mch_libcall(char_u *libname, char_u *funcname, char_u *argstring, int argint, char_u **string_result, int *number_result);
+int mch_get_random(char_u *buf, int len);
 void setup_term_clip(void);
 void start_xterm_trace(int button);
 void stop_xterm_trace(void);
