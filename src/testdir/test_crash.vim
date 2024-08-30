@@ -209,10 +209,27 @@ func Test_crash1_3()
   let args = printf(cmn_args, vim, file)
   call term_sendkeys(buf, args)
   call TermWait(buf, 150)
-  call delete('Untitled')
 
   let file = 'crash/nullpointer'
   let cmn_args = "%s -u NONE -i NONE -n -e -s -S %s -c ':qa!'\<cr>"
+  let args = printf(cmn_args, vim, file)
+  call term_sendkeys(buf, args)
+  call TermWait(buf, 50)
+
+  let file = 'crash/heap_overflow3'
+  let cmn_args = "%s -u NONE -i NONE -n -X -m -n -e -s -S %s -c ':qa!'"
+  let args = printf(cmn_args, vim, file)
+  call term_sendkeys(buf, args)
+  call TermWait(buf, 150)
+
+  let file = 'crash/heap_overflow_glob2regpat'
+  let cmn_args = "%s -u NONE -i NONE -n -X -m -n -e -s -S %s -c ':qa!'"
+  let args = printf(cmn_args, vim, file)
+  call term_sendkeys(buf, args)
+  call TermWait(buf, 50)
+
+  let file = 'crash/nullptr_regexp_nfa'
+  let cmn_args = "%s -u NONE -i NONE -n -X -m -n -e -s -S %s -c ':qa!'"
   let args = printf(cmn_args, vim, file)
   call term_sendkeys(buf, args)
   call TermWait(buf, 50)
@@ -229,6 +246,13 @@ func Test_crash2()
   let buf = RunVimInTerminal(args .. ' crash/vim_regsub_both', opts)
   call VerifyScreenDump(buf, 'Test_crash_01', {})
   exe buf .. "bw!"
+endfunc
+
+func TearDown()
+  " That file is created at Test_crash1_3() by dialog_changed_uaf
+  " but cleaning up in that test doesn't remove it. Let's try again at
+  " the end of this test script
+  call delete('Untitled')
 endfunc
 
 " vim: shiftwidth=2 sts=2 expandtab
