@@ -1,18 +1,32 @@
-// VIM_TEST_SETUP unlet! g:java_ignore_javadoc g:java_no_trail_space_error
-// VIM_TEST_SETUP unlet! g:java_no_tab_space_error
-// VIM_TEST_SETUP let [g:java_space_errors,g:java_comment_strings] = [1,1]
-// VIM_TEST_SETUP setlocal spell | highlight link javaCommentStart Todo
+// VIM_TEST_SETUP unlet! g:java_no_tab_space_error g:java_ignore_javadoc
+// VIM_TEST_SETUP unlet! g:java_no_trail_space_error
+// VIM_TEST_SETUP let [g:java_space_errors,g:java_comment_strings]=[1,1]
+// VIM_TEST_SETUP let g:java_ignore_markdown = 1
 
 
 
 
-/**/ /*/ */ /* /*/ /*/*/ /*//*/ /** Comment tests.
+
+
+// VIM_TEST_SETUP setlocal spell fdc=2 fdl=64 fdm=syntax fen
+// VIM_TEST_SETUP highlight link javaCommentStart Todo
+// VIM_TEST_SETUP highlight link javaCommentTitle Underlined
+
+
+
+
+
+
+
+/**/ /*/ */ /* /*/ /*/*/ /*//*/ /** HTML comment tests.
  * <p>There is no entry point method {@code main}:
- * {@snippet file = Snippets.java region = main id = _01}
+ * {@snippet file = HTMLSnippets.java region = main id = _01}
  * <p>There is no textual representation:
- * {@snippet class = Snippets region = toString id = _02} */
-class CommentsTests
-{
+ * {@snippet class = HTMLSnippets region = toString id = _02} */
+class HTMLCommentsTests implements Comparable<HTMLCommentsTests>
+{	// JDK 21+.
+	private HTMLCommentsTests() { }
+
 	/** No-op, i. e. no operation.
 	* ({@literal@literal} may be used with {@code .} for contraction.)
 	* @return {@code null} */
@@ -49,23 +63,48 @@ class CommentsTests
 	/** {@return {@code null}, with no-op, i.e. no operation} . . */
 	Void noOp9() { return null; }
 
+	/** {@return the major Java version}
+	 * @hidden */
+	protected int majorVersion() { return 21; }
+
+	/** {@summary Compares this instance with the passed {@code that}
+	 * instance for order by invoking {@link Integer#compare(int, int)
+	 * compare} and passing it {@code this.majorVersion()} and
+	 * {@code that.majorVersion()} as respective @arguments.}
+	 * {@inheritDoc} */
+	@Override public int compareTo(HTMLCommentsTests that)
+	{
+		java.util.Objects.requireNonNull(that, "that");
+		return Integer.compare(this.majorVersion(),
+						that.majorVersion());
+	}
+
+	/// Returns an empty string for an @Override annotated method
+	/// (see Chapter 9.6.4.4 {@literal @Override} in a Java Language
+	/// Specification) overridden from `java.lang.Object`
+	///
+	/// @return an empty string /// No period for the above summary!
+	private String asString() { return ""; }
+
 	/** Returns an empty string for an @Override annotated method
 	* (see Chapter 9.6.4.4 {@literal @Override} in a Java Language
 	* Specification) overridden from <code>java.lang.Object</code>
 	*
 	* @return an empty string */// No period for the above summary!
-	@Override public String toString() { return ""; }
+	@Override public String toString() { return asString(); }
 }
 
-// javadoc --snippet-path . --source-path . -d /tmp/doc/ -package \
-// 	-tag 'jls:a:See Java Language Specification:' Snippets.java
-/** Snippets for comment tests. */
-class Snippets
+// javadoc --snippet-path . --source-path . -d /tmp/html_docs/ -package \
+// 	-tag 'jls:a:See Java Language Specification:' HTMLSnippets.java
+/** Snippets for HTML comment tests. */
+class HTMLSnippets
 {	/* 	TRAILING BLANKS AND MESSPILLINGS ARE SIGNIFICANT! */
+	private HTMLSnippets() { }
+
 	/** The method {@code main} must be declared {@code public}, {@code
 	 * static}, and {@code void}.  It must specify a formal parameter
 	 * whose declared type is array of {@link String}.  Therefore,
-	 * either of the following declarations is acceptable:
+	 * <em>either</em> of the following declarations is acceptable:
 	 * 	{@snippet lang="java":
 	 * // @highlight substring="main" type="italic":
 	 * public static void main(String[] args) { }
@@ -79,9 +118,11 @@ class Snippets
 	public static void main(String[] args) { }
 	// @end 
 
-	/** {@return an empty string}	
+	/** {@return an empty string}
 	 * @see <a href="https://docs.oracle.com/javase/specs/jls/se21/html/jls-3.html#jls-3.10.5">3.10.5 String Literals</a>
-	 * @see Object#toString() */
+	 * @see
+	 * <a href="https://docs.oracle.com/javase/specs/jls/se21/html/jls-4.html#jls-4.3.2">4.3.2 The Class Object</a>
+	 * @see java.base/java.lang.Object#toString() */
 	// @start region = toString	
 	// @replace substring = '""' replacement = "\u0022\u0022"
 	// @link regex = '\bString' target = java.lang.String type = linkplain :
