@@ -20,6 +20,13 @@ typedef int		colnr_T;
 typedef unsigned short	short_u;
 #endif
 
+// structure to store a string (including it's length)
+typedef struct
+{
+    char_u  *string;		// the string
+    size_t  length;		// length of the string (excluding the NUL)
+} string_T;
+
 /*
  * Position in file or buffer.
  */
@@ -3241,6 +3248,8 @@ struct file_buffer
 #ifdef FEAT_EVAL
     char_u	*b_p_tfu;	// 'tagfunc' option value
     callback_T	b_tfu_cb;	// 'tagfunc' callback
+    char_u	*b_p_ffu;	// 'findfunc' option value
+    callback_T	b_ffu_cb;	// 'findfunc' callback
 #endif
     int		b_p_eof;	// 'endoffile'
     int		b_p_eol;	// 'endofline'
@@ -3327,9 +3336,6 @@ struct file_buffer
     char_u	*b_p_efm;	// 'errorformat' local value
 #endif
     char_u	*b_p_ep;	// 'equalprg' local value
-#ifdef FEAT_EVAL
-    char_u	*b_p_fexpr;	// 'findexpr' local value
-#endif
     char_u	*b_p_path;	// 'path' local value
     int		b_p_ar;		// 'autoread' local value
     char_u	*b_p_tags;	// 'tags' local value
@@ -4784,7 +4790,7 @@ struct block_def
 // Each yank register has an array of pointers to lines.
 typedef struct
 {
-    char_u	**y_array;	// pointer to array of line pointers
+    string_T	*y_array;	// pointer to array of string_T structs
     linenr_T	y_size;		// number of lines in y_array
     char_u	y_type;		// MLINE, MCHAR or MBLOCK
     colnr_T	y_width;	// only set if y_type == MBLOCK
@@ -5080,13 +5086,12 @@ typedef struct {
 // Return the length of a string literal
 #define STRLEN_LITERAL(s) (sizeof(s) - 1)
 
-// Store a key/value pair
+// Store a key/value (string) pair
 typedef struct
 {
     int	    key;        // the key
-    char    *value;     // the value string
-    size_t  length;     // length of the value string
+    string_T value;	// the value
 } keyvalue_T;
 
 #define KEYVALUE_ENTRY(k, v) \
-    {(k), (v), STRLEN_LITERAL(v)}
+    {(k), {((char_u *)v), STRLEN_LITERAL(v)}}
