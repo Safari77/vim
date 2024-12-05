@@ -1,7 +1,7 @@
 " Vim support file to detect file types
 "
 " Maintainer:	The Vim Project <https://github.com/vim/vim>
-" Last Change:	2024 Nov 19
+" Last Change:	2024 Nov 24
 " Former Maintainer:	Bram Moolenaar <Bram@vim.org>
 
 " Listen very carefully, I will say this only once
@@ -452,6 +452,9 @@ au BufNewFile,BufRead .clang-format		setf yaml
 " Clang-tidy
 au BufNewFile,BufRead .clang-tidy		setf yaml
 
+" Conda configuration file
+au BufNewFile,BufRead .condarc,condarc		setf yaml
+
 " Matplotlib
 au BufNewFile,BufRead *.mplstyle,matplotlibrc	setf yaml
 
@@ -646,9 +649,9 @@ au BufNewFile,BufRead *.dfy			setf dafny
 au BufRead,BufNewfile *.dart,*.drt		setf dart
 
 " Debian Control
-au BufNewFile,BufRead */debian/control		setf debcontrol
+au BufNewFile,BufRead */{debian,DEBIAN}/control		setf debcontrol
 au BufNewFile,BufRead control
-	\  if getline(1) =~ '^Source:'
+	\  if getline(1) =~ '^Source:\|^Package:'
 	\|   setf debcontrol
 	\| endif
 
@@ -1982,8 +1985,8 @@ au BufNewFile,BufRead MANIFEST.in		setf pymanifest
 " Pyret
 au BufNewFile,BufRead *.arr			setf pyret
 
-" Pyrex
-au BufNewFile,BufRead *.pyx,*.pxd		setf pyrex
+" Pyrex/Cython
+au BufNewFile,BufRead *.pyx,*.pyx+,*.pxd,*.pxi	setf pyrex
 
 " Python, Python Shell Startup and Python Stub Files
 " Quixote (Python-based web framework)

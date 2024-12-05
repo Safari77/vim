@@ -5786,6 +5786,7 @@ V	visual.txt	/*V*
 VIMINIT	starting.txt	/*VIMINIT*
 VMS	os_vms.txt	/*VMS*
 Vi	intro.txt	/*Vi*
+Vietnamese	vietnamese.txt	/*Vietnamese*
 View	starting.txt	/*View*
 Vim9	vim9.txt	/*Vim9*
 Vim9-abstract-class	vim9class.txt	/*Vim9-abstract-class*
@@ -6565,13 +6566,16 @@ compiler-hpada	ft_ada.txt	/*compiler-hpada*
 compiler-javac	quickfix.txt	/*compiler-javac*
 compiler-make	quickfix.txt	/*compiler-make*
 compiler-manx	quickfix.txt	/*compiler-manx*
+compiler-maven	quickfix.txt	/*compiler-maven*
 compiler-mypy	quickfix.txt	/*compiler-mypy*
 compiler-pandoc	quickfix.txt	/*compiler-pandoc*
 compiler-perl	quickfix.txt	/*compiler-perl*
 compiler-pylint	quickfix.txt	/*compiler-pylint*
+compiler-pytest	quickfix.txt	/*compiler-pytest*
 compiler-pyunit	quickfix.txt	/*compiler-pyunit*
 compiler-ruff	quickfix.txt	/*compiler-ruff*
 compiler-select	quickfix.txt	/*compiler-select*
+compiler-spotbugs	quickfix.txt	/*compiler-spotbugs*
 compiler-tex	quickfix.txt	/*compiler-tex*
 compiler-typst	quickfix.txt	/*compiler-typst*
 compiler-vaxada	ft_ada.txt	/*compiler-vaxada*
@@ -7354,6 +7358,7 @@ ft-lifelines-syntax	syntax.txt	/*ft-lifelines-syntax*
 ft-lisp-syntax	syntax.txt	/*ft-lisp-syntax*
 ft-lite-syntax	syntax.txt	/*ft-lite-syntax*
 ft-lpc-syntax	syntax.txt	/*ft-lpc-syntax*
+ft-lua-plugin	filetype.txt	/*ft-lua-plugin*
 ft-lua-syntax	syntax.txt	/*ft-lua-syntax*
 ft-mail-plugin	filetype.txt	/*ft-mail-plugin*
 ft-mail.vim	syntax.txt	/*ft-mail.vim*
@@ -10222,6 +10227,7 @@ state()	builtin.txt	/*state()*
 static-tag	tagsrch.txt	/*static-tag*
 status-line	windows.txt	/*status-line*
 statusmsg-variable	eval.txt	/*statusmsg-variable*
+stl-%!	options.txt	/*stl-%!*
 stl-%{	options.txt	/*stl-%{*
 str2float()	builtin.txt	/*str2float()*
 str2list()	builtin.txt	/*str2list()*
@@ -10643,6 +10649,7 @@ template	autocmd.txt	/*template*
 tempname()	builtin.txt	/*tempname()*
 term++close	terminal.txt	/*term++close*
 term++open	terminal.txt	/*term++open*
+term++shell	terminal.txt	/*term++shell*
 term-dependent-settings	term.txt	/*term-dependent-settings*
 term-list	syntax.txt	/*term-list*
 term.txt	term.txt	/*term.txt*
@@ -10723,6 +10730,7 @@ terminal-job-index	index.txt	/*terminal-job-index*
 terminal-key-codes	term.txt	/*terminal-key-codes*
 terminal-mouse	term.txt	/*terminal-mouse*
 terminal-ms-windows	terminal.txt	/*terminal-ms-windows*
+terminal-nospecial	terminal.txt	/*terminal-nospecial*
 terminal-options	term.txt	/*terminal-options*
 terminal-output-codes	term.txt	/*terminal-output-codes*
 terminal-resizing	terminal.txt	/*terminal-resizing*
@@ -11235,6 +11243,15 @@ vi-features	vi_diff.txt	/*vi-features*
 vi:	options.txt	/*vi:*
 vi_diff.txt	vi_diff.txt	/*vi_diff.txt*
 vib	motion.txt	/*vib*
+vietnamese	vietnamese.txt	/*vietnamese*
+vietnamese-ime_diff	vietnamese.txt	/*vietnamese-ime_diff*
+vietnamese-intro	vietnamese.txt	/*vietnamese-intro*
+vietnamese-keymap	vietnamese.txt	/*vietnamese-keymap*
+vietnamese-l18n	vietnamese.txt	/*vietnamese-l18n*
+vietnamese-telex_utf-8	vietnamese.txt	/*vietnamese-telex_utf-8*
+vietnamese-viqr_utf-8	vietnamese.txt	/*vietnamese-viqr_utf-8*
+vietnamese-vni_utf-8	vietnamese.txt	/*vietnamese-vni_utf-8*
+vietnamese.txt	vietnamese.txt	/*vietnamese.txt*
 view	starting.txt	/*view*
 view-diffs	diff.txt	/*view-diffs*
 view-file	starting.txt	/*view-file*
