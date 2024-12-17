@@ -1,7 +1,7 @@
 " Vim support file to detect file types
 "
 " Maintainer:	The Vim Project <https://github.com/vim/vim>
-" Last Change:	2024 Nov 24
+" Last Change:	2024 Dec 12
 " Former Maintainer:	Bram Moolenaar <Bram@vim.org>
 
 " Listen very carefully, I will say this only once
@@ -183,7 +183,14 @@ au BufNewFile,BufRead *.demo,*.dm{1,2,3,t},*.wxm,maxima-init.mac setf maxima
 
 " Assembly (all kinds)
 " *.lst is not pure assembly, it has two extra columns (address, byte codes)
+" *.[sS], *.[aA] usually Assembly - GNU
 au BufNewFile,BufRead *.asm,*.[sS],*.[aA],*.mac,*.lst	call dist#ft#FTasm()
+
+" Assembly - Netwide
+au BufNewFile,BufRead *.nasm			setf nasm
+
+" Assembly - Microsoft
+au BufNewFile,BufRead *.masm			setf masm
 
 " Assembly - Macro (VAX)
 au BufNewFile,BufRead *.mar			setf vmasm
@@ -1308,6 +1315,9 @@ au BufNewFile,BufRead Kconfig,Kconfig.debug,Config.in	setf kconfig
 " Lace (ISE)
 au BufNewFile,BufRead *.ace,*.ACE		setf lace
 
+" Lalrpop
+au BufNewFile,Bufread *.lalrpop			setf lalrpop
+
 " Larch Shared Language
 au BufNewFile,BufRead .lsl			call dist#ft#FTlsl()
 
@@ -1866,6 +1876,9 @@ au BufNewFile,BufRead requires/*.txt		setf requirements
 au BufNewFile,BufRead Pipfile			setf toml
 au BufNewFile,BufRead Pipfile.lock		setf json
 
+" Pixi lock
+au BufNewFile,BufRead pixi.lock			setf yaml
+
 " PL/1, PL/I
 au BufNewFile,BufRead *.pli,*.pl1		setf pli
 
@@ -1975,6 +1988,10 @@ au BufNewFile,BufRead *.pk			setf poke
 
 " Protocols
 au BufNewFile,BufRead */etc/protocols		setf protocols
+
+" Nvidia PTX (Parallel Thread Execution)
+" See https://docs.nvidia.com/cuda/parallel-thread-execution/
+au BufNewFile,BufRead *.ptx			setf ptx
 
 " Purescript
 au BufNewFile,BufRead *.purs			setf purescript

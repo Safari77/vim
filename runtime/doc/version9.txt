@@ -1,4 +1,4 @@
-*version9.txt*  For Vim version 9.1.  Last change: 2024 Nov 28
+*version9.txt*  For Vim version 9.1.  Last change: 2024 Dec 16
 
 
 		  VIM REFERENCE MANUAL    by Bram Moolenaar
@@ -41613,6 +41613,10 @@ Changed~
   from |defaults.vim|
 - the default 'backspace' option for Vim has been set to "indent,eol,start"
   and removed from |defaults.vim|
+- the completed word and completion type are provided when handling the
+  |CompleteDone| autocommand in the |v:event| dictionary
+- the default fontsize for the GTK builds of Vim (Windows and Unix) has been
+  increased to 12pt to accomodate modern high-dpi monitors
 
 							*added-9.2*
 Added ~
@@ -41649,6 +41653,7 @@ Autocommands: ~
 
 Highlighting: ~
 
+|hl-ComplMatchIns|	matched text of the currently inserted completion.
 |hl-MsgArea|		highlighting of the Command-line and messages area
 |hl-PmenuMatch|		Popup menu: highlighting of matched text
 |hl-PmenuMatchSel|	Popup menu: highlighting of matched text in selected
@@ -41657,7 +41662,8 @@ Highlighting: ~
 Commands: ~
 
 |[r| and |]r|		to move the cursor to previous/next rare word
-
+|:pbuffer|		Edit buffer [N] from the buffer list in the preview
+			window
 
 Options: ~
 
@@ -41665,7 +41671,7 @@ Options: ~
 			popup
 'findfunc'		Vim function to obtain the results for a |:find|
 			command
-'msghistory'		Max number of messages to remember
+'messagesopt'		configure |:messages| and |hit-enter| prompt
 'winfixbuf'		Keep buffer focused in a window
 'tabclose'		Which tab page to focus after closing a tab page
 't_xo'			Terminal uses XON/XOFF handshaking (e.g. vt420)

@@ -499,9 +499,9 @@ $quote	eval.txt	/*$quote*
 'menc'	options.txt	/*'menc'*
 'menuitems'	options.txt	/*'menuitems'*
 'mesg'	vi_diff.txt	/*'mesg'*
+'messagesopt'	options.txt	/*'messagesopt'*
 'mfd'	options.txt	/*'mfd'*
 'mh'	options.txt	/*'mh'*
-'mhi'	options.txt	/*'mhi'*
 'mis'	options.txt	/*'mis'*
 'mkspellmem'	options.txt	/*'mkspellmem'*
 'ml'	options.txt	/*'ml'*
@@ -517,6 +517,7 @@ $quote	eval.txt	/*$quote*
 'modelines'	options.txt	/*'modelines'*
 'modifiable'	options.txt	/*'modifiable'*
 'modified'	options.txt	/*'modified'*
+'mopt'	options.txt	/*'mopt'*
 'more'	options.txt	/*'more'*
 'mouse'	options.txt	/*'mouse'*
 'mousef'	options.txt	/*'mousef'*
@@ -532,7 +533,6 @@ $quote	eval.txt	/*$quote*
 'mousetime'	options.txt	/*'mousetime'*
 'mp'	options.txt	/*'mp'*
 'mps'	options.txt	/*'mps'*
-'msghistory'	options.txt	/*'msghistory'*
 'msm'	options.txt	/*'msm'*
 'mzq'	options.txt	/*'mzq'*
 'mzquantum'	options.txt	/*'mzquantum'*
@@ -3026,6 +3026,8 @@ $quote	eval.txt	/*$quote*
 :packadd	repeat.txt	/*:packadd*
 :packl	repeat.txt	/*:packl*
 :packloadall	repeat.txt	/*:packloadall*
+:pb	windows.txt	/*:pb*
+:pbuffer	windows.txt	/*:pbuffer*
 :pc	windows.txt	/*:pc*
 :pclose	windows.txt	/*:pclose*
 :pe	if_perl.txt	/*:pe*
@@ -7218,6 +7220,7 @@ fold-create-marker	fold.txt	/*fold-create-marker*
 fold-delete-marker	fold.txt	/*fold-delete-marker*
 fold-diff	fold.txt	/*fold-diff*
 fold-expr	fold.txt	/*fold-expr*
+fold-expr-slow	fold.txt	/*fold-expr-slow*
 fold-foldcolumn	fold.txt	/*fold-foldcolumn*
 fold-foldlevel	fold.txt	/*fold-foldlevel*
 fold-foldtext	fold.txt	/*fold-foldtext*
@@ -8133,6 +8136,7 @@ hit-return	message.txt	/*hit-return*
 hitest.vim	syntax.txt	/*hitest.vim*
 hjkl	usr_02.txt	/*hjkl*
 hl-ColorColumn	syntax.txt	/*hl-ColorColumn*
+hl-ComplMatchIns	syntax.txt	/*hl-ComplMatchIns*
 hl-Conceal	syntax.txt	/*hl-Conceal*
 hl-CurSearch	syntax.txt	/*hl-CurSearch*
 hl-Cursor	syntax.txt	/*hl-Cursor*
@@ -8404,6 +8408,7 @@ inactive-buffer	windows.txt	/*inactive-buffer*
 include-search	tagsrch.txt	/*include-search*
 inclusion	helphelp.txt	/*inclusion*
 inclusive	motion.txt	/*inclusive*
+inclusive-motion-selection-exclusive	motion.txt	/*inclusive-motion-selection-exclusive*
 incomp-small-6	version6.txt	/*incomp-small-6*
 incompatible-5	version5.txt	/*incompatible-5*
 incompatible-6	version6.txt	/*incompatible-6*
@@ -11247,7 +11252,7 @@ vietnamese	vietnamese.txt	/*vietnamese*
 vietnamese-ime_diff	vietnamese.txt	/*vietnamese-ime_diff*
 vietnamese-intro	vietnamese.txt	/*vietnamese-intro*
 vietnamese-keymap	vietnamese.txt	/*vietnamese-keymap*
-vietnamese-l18n	vietnamese.txt	/*vietnamese-l18n*
+vietnamese-l10n	vietnamese.txt	/*vietnamese-l10n*
 vietnamese-telex_utf-8	vietnamese.txt	/*vietnamese-telex_utf-8*
 vietnamese-viqr_utf-8	vietnamese.txt	/*vietnamese-viqr_utf-8*
 vietnamese-vni_utf-8	vietnamese.txt	/*vietnamese-vni_utf-8*
