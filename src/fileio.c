@@ -3059,7 +3059,10 @@ vim_fsync(int fd)
     r = fcntl(fd, F_FULLFSYNC);
     if (r != 0)  // F_FULLFSYNC not working or not supported
 # endif
+    do {
 	r = fsync(fd);
+    } while ((r == -1) && (errno == EINTR));
+    if ((r == -1)  && (errno == EINVAL)) return 0;
     return r;
 }
 #endif
@@ -4007,7 +4010,7 @@ vim_copyfile(char_u *from, char_u *to)
 #if defined(HAVE_SELINUX) || defined(HAVE_SMACK)
     mch_copy_sec(from, tmpfn);
 #endif
-    if (fsync(fd_out) != 0)
+    if (vim_fsync(fd_out) != 0)
     {
        errmsg = _("E999: Error fsyncing \"%s\"");
        close(fd_out);

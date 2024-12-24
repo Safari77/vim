@@ -1494,7 +1494,7 @@ buf_write(
 			    }
 			}
 
-			if (fsync(bfd) < 0)
+			if (vim_fsync(bfd) < 0)
 			    errmsg = _("E999: Error fsyncing \"%s\"");
 			if (close(bfd) < 0 && errmsg == NULL)
 			    errmsg = (char_u *)_(e_close_error_for_backup_file_add_bang_to_write_anyway);
@@ -2379,7 +2379,7 @@ restore_backup:
 				break;
 			}
 
-			if ((fsync(write_info.bw_fd) == 0)
+			if ((vim_fsync(write_info.bw_fd) == 0)
 			    && (close(write_info.bw_fd) >= 0)
 			    && write_info.bw_len == 0)
 				end = 1;		// success

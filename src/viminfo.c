@@ -3318,7 +3318,7 @@ write_viminfo(char_u *file, int forceit)
     viminfo_errcnt = 0;
     do_viminfo(fp_in, fp_out, forceit ? 0 : (VIF_WANT_INFO | VIF_WANT_MARKS));
 
-    if ((fflush(fp_out) == EOF) || (fsync(fileno(fp_out)) == -1) || (fclose(fp_out) == EOF))
+    if ((fflush(fp_out) == EOF) || (vim_fsync(fileno(fp_out)) == -1) || (fclose(fp_out) == EOF))
 	++viminfo_errcnt;
 
     if (fp_in != NULL)
