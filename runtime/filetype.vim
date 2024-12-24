@@ -844,7 +844,7 @@ au BufNewFile,BufRead *.fan,*.fwt		setf fan
 au BufNewFile,BufRead *.factor			setf factor
 
 " Fennel
-autocmd BufRead,BufNewFile *.fnl		setf fennel
+autocmd BufRead,BufNewFile *.fnl,{,.}fennelrc	setf fennel
 
 " Fetchmail RC file
 au BufNewFile,BufRead .fetchmailrc		setf fetchmail
@@ -1200,7 +1200,7 @@ au BufNewFile,BufRead *.jpl,*.jpr		setf jam
 au BufNewFile,BufRead *.janet			setf janet
 
 " Java
-au BufNewFile,BufRead *.java,*.jav		setf java
+au BufNewFile,BufRead *.java,*.jav,*.jsh	setf java
 
 " JavaCC
 au BufNewFile,BufRead *.jj,*.jjt		setf javacc
@@ -1384,9 +1384,9 @@ au BufNewFile,BufRead *.ly,*.ily		setf lilypond
 " Lisp (*.el = ELisp)
 " *.jl was removed, it's also used for Julia, better skip than guess wrong.
 if has("fname_case")
-  au BufNewFile,BufRead *.lsp,*.lisp,*.asd,*.el,*.L,.emacs,.sawfishrc,*.stsg,*/supertux2/config setf lisp
+  au BufNewFile,BufRead *.lsp,*.lisp,*.asd,*.el,*.L,.emacs,.sawfishrc setf lisp
 else
-  au BufNewFile,BufRead *.lsp,*.lisp,*.asd,*.el,.emacs,.sawfishrc,*.stsg,*/supertux2/config setf lisp
+  au BufNewFile,BufRead *.lsp,*.lisp,*.asd,*.el,.emacs,.sawfishrc setf lisp
 endif
 
 " *.cl = Common Lisp or OpenCL
@@ -2273,12 +2273,13 @@ au BufNewFile,BufRead *.decl,*.dcl,*.dec
 au BufNewFile,BufRead catalog			setf catalog
 
 " Shell scripts (sh, ksh, bash, bash2, csh); Allow .profile_foo etc.
-" Gentoo ebuilds, Arch Linux PKGBUILDs and Alpine Linux APKBUILDs are actually
-" bash scripts.
+" Gentoo ebuilds and Arch Linux PKGBUILDs are actually bash scripts.
 " NOTE: Patterns ending in a star are further down, these have lower priority.
-au BufNewFile,BufRead .bashrc,bashrc,bash.bashrc,.bash[_-]profile,.bash[_-]logout,.bash[_-]aliases,.bash[_-]history,bash-fc[-.],*.ebuild,*.bash,*.eclass,PKGBUILD,APKBUILD,*.bats,*.cygport call dist#ft#SetFileTypeSH("bash")
+au BufNewFile,BufRead .bashrc,bashrc,bash.bashrc,.bash[_-]profile,.bash[_-]logout,.bash[_-]aliases,.bash[_-]history,bash-fc[-.],*.ebuild,*.bash,*.eclass,PKGBUILD,*.bats,*.cygport call dist#ft#SetFileTypeSH("bash")
 au BufNewFile,BufRead .kshrc,*.ksh call dist#ft#SetFileTypeSH("ksh")
 au BufNewFile,BufRead */etc/profile,.profile,*.sh,*.env{rc,} call dist#ft#SetFileTypeSH(getline(1))
+" Alpine Linux APKBUILDs are actually POSIX sh scripts with special treatment.
+au BufNewFile,BufRead APKBUILD	setf apkbuild
 
 " Shell script (Arch Linux) or PHP file (Drupal)
 au BufNewFile,BufRead *.install
@@ -2313,8 +2314,8 @@ au BufNewFile,BufRead *.zsh,*.zsh-theme,*.zunit		setf zsh
 " Salt state files
 au BufNewFile,BufRead *.sls			setf salt
 
-" Scheme ("racket" patterns are now separate, see above)
-au BufNewFile,BufRead *.scm,*.ss,*.sld		setf scheme
+" Scheme, Supertux configuration ("racket" patterns are now separate, see above)
+au BufNewFile,BufRead *.scm,*.ss,*.sld,*.stsg,*/supertux2/config	setf scheme
 
 " Screen RC
 au BufNewFile,BufRead .screenrc,screenrc	setf screen
