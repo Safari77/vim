@@ -1,7 +1,7 @@
 " Vim support file to detect file types
 "
 " Maintainer:	The Vim Project <https://github.com/vim/vim>
-" Last Change:	2024 Dec 12
+" Last Change:	2024 Dec 30
 " Former Maintainer:	Bram Moolenaar <Bram@vim.org>
 
 " Listen very carefully, I will say this only once
@@ -1078,6 +1078,9 @@ au BufRead,BufNewFile *.hws			setf hollywood
 " Hoon
 au BufRead,BufNewFile *.hoon			setf hoon
 
+" TI Code Composer Studio General Extension Language
+au BufNewFile,BufRead *.gel			setf gel
+
 " Tilde (must be before HTML)
 au BufNewFile,BufRead *.t.html			setf tilde
 
@@ -1108,6 +1111,9 @@ au BufNewFile,BufRead */etc/hosts.allow,*/etc/hosts.deny  setf hostsaccess
 
 " Hurl
 au BufRead,BufNewFile *.hurl			setf hurl
+
+" Hy
+au BufRead,BufNewFile *.hy,.hy-history		setf hy
 
 " Hyper Builder
 au BufNewFile,BufRead *.hb			setf hb
@@ -1257,7 +1263,7 @@ au BufNewFile,BufRead *.sublime-project,*.sublime-settings,*.sublime-workspace	s
 au BufNewFile,BufRead .prettierrc,.firebaserc,.stylelintrc,.lintstagedrc,flake.lock,deno.lock	setf json
 
 " JSONC (JSON with comments)
-au BufNewFile,BufRead *.jsonc,.babelrc,.eslintrc,.jsfmtrc	setf jsonc
+au BufNewFile,BufRead *.jsonc,.babelrc,.eslintrc,.jsfmtrc,bun.lock	setf jsonc
 au BufNewFile,BufRead .jshintrc,.jscsrc,.vsconfig,.hintrc,.swrc,[jt]sconfig*.json	setf jsonc
 
 " JSON
@@ -1487,7 +1493,12 @@ au BufNewFile,BufRead */etc/man.conf,man.config	setf manconf
 au BufNewFile,BufRead *.mv,*.mpl,*.mws		setf maple
 
 " Map (UMN mapserver config file)
-au BufNewFile,BufRead *.map			setf map
+au BufNewFile,BufRead *.map
+	\ if getline(1) =~ '^\*\+$' |
+	\   setf lnkmap |
+	\ else |
+	\   setf map |
+	\ endif
 
 " Markdown
 au BufNewFile,BufRead *.markdown,*.mdown,*.mkd,*.mkdn,*.mdwn,*.md
@@ -2314,8 +2325,8 @@ au BufNewFile,BufRead *.zsh,*.zsh-theme,*.zunit		setf zsh
 " Salt state files
 au BufNewFile,BufRead *.sls			setf salt
 
-" Scheme, Supertux configuration ("racket" patterns are now separate, see above)
-au BufNewFile,BufRead *.scm,*.ss,*.sld,*.stsg,*/supertux2/config	setf scheme
+" Scheme, Supertux configuration, Lips.js history ("racket" patterns are now separate, see above)
+au BufNewFile,BufRead *.scm,*.ss,*.sld,*.stsg,*/supertux2/config,.lips_repl_history	setf scheme
 
 " Screen RC
 au BufNewFile,BufRead .screenrc,screenrc	setf screen
@@ -2408,6 +2419,7 @@ au BufNewFile,BufRead *.ice			setf slice
 " Microsoft Visual Studio Solution
 au BufNewFile,BufRead *.sln			setf solution
 au BufNewFile,BufRead *.slnf			setf json
+au BufNewFile,BufRead *.slnx			setf xml
 
 " Spice
 au BufNewFile,BufRead *.sp,*.spice		setf spice
@@ -2903,6 +2915,9 @@ au BufNewFile,BufRead *.fsproj,*.fsproj.user	setf xml
 
 " VBPROJ files are Visual Studio.NET's XML-based Visual Basic project config files
 au BufNewFile,BufRead *.vbproj,*.vbproj.user	setf xml
+
+" MSBUILD configuration files are also XML
+au BufNewFile,BufRead Directory.Packages.props,Directory.Build.targets,Directory.Build.props	setf xml
 
 " Unison Language
 au BufNewFile,BufRead *.u,*.uu				setf unison
