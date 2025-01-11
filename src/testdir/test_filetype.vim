@@ -196,7 +196,7 @@ def s:GetFilenameChecks(): dict<list<string>>
     crm: ['file.crm'],
     crontab: ['crontab', 'crontab.file', '/etc/cron.d/file', 'any/etc/cron.d/file'],
     crystal: ['file.cr'],
-    cs: ['file.cs', 'file.csx'],
+    cs: ['file.cs', 'file.csx', 'file.cake'],
     csc: ['file.csc'],
     csdl: ['file.csdl'],
     csp: ['file.csp', 'file.fdr'],
@@ -391,7 +391,7 @@ def s:GetFilenameChecks(): dict<list<string>>
     jess: ['file.clp'],
     jgraph: ['file.jgr'],
     jinja: ['file.jinja'],
-    jj: ['file.jjdescription'],
+    jjdescription: ['file.jjdescription'],
     jovial: ['file.jov', 'file.j73', 'file.jovial'],
     jproperties: ['file.properties', 'file.properties_xx', 'file.properties_xx_xx', 'some.properties_xx_xx_file', 'org.eclipse.xyz.prefs'],
     jq: ['file.jq'],
@@ -676,7 +676,6 @@ def s:GetFilenameChecks(): dict<list<string>>
     samba: ['smb.conf'],
     sas: ['file.sas'],
     sass: ['file.sass'],
-    sather: ['file.sa'],
     sbt: ['file.sbt'],
     scala: ['file.scala'],
     scheme: ['file.scm', 'file.ss', 'file.sld', 'file.stsg', 'any/local/share/supertux2/config', '.lips_repl_history'],
@@ -697,6 +696,7 @@ def s:GetFilenameChecks(): dict<list<string>>
          'user-dirs.defaults', 'user-dirs.dirs', 'makepkg.conf', '.makepkg.conf',
          'file.mdd', '.env', '.envrc', 'devscripts.conf', '.devscripts', 'file.lo',
          'file.la', 'file.lai'],
+    shaderslang: ['file.slang'],
     sieve: ['file.siv', 'file.sieve'],
     sil: ['file.sil'],
     simula: ['file.sim'],
@@ -2304,6 +2304,43 @@ func Test_cls_file()
   call writefile(['VERSION 1.0 CLASS'], 'Xfile.cls')
   split Xfile.cls
   call assert_equal('vb', &filetype)
+  bwipe!
+
+  filetype off
+endfunc
+
+func Test_cmd_file()
+  filetype on
+
+  call writefile(['--rom_model'], 'Xfile.cmd')
+  split Xfile.cmd
+  call assert_equal('lnk', &filetype)
+  bwipe!
+
+  call writefile(['/* comment */'], 'Xfile.cmd')
+  split Xfile.cmd
+  call assert_equal('rexx', &filetype)
+  bwipe!
+
+  call writefile(['REM comment'], 'Xfile.cmd')
+  split Xfile.cmd
+  call assert_equal('dosbatch', &filetype)
+  bwipe!
+
+  filetype off
+endfunc
+
+func Test_sa_file()
+  filetype on
+
+  call writefile([';* XXX-a.sa: XXX for TI C6000 DSP *;', '.no_mdep'], 'Xfile.sa')
+  split Xfile.sa
+  call assert_equal('tiasm', &filetype)
+  bwipe!
+
+  call writefile(['-- comment'], 'Xfile.sa')
+  split Xfile.sa
+  call assert_equal('sather', &filetype)
   bwipe!
 
   filetype off

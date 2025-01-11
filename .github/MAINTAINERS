@@ -203,7 +203,7 @@ runtime/ftplugin/java.vim		@zzzyxwvut
 runtime/ftplugin/javacc.vim		@ribru17
 runtime/ftplugin/javascript.vim		@dkearns
 runtime/ftplugin/javascriptreact.vim	@dkearns
-runtime/ftplugin/jj.vim			@gpanders
+runtime/ftplugin/jjdescription.vim	@gpanders
 runtime/ftplugin/json.vim		@dbarnett
 runtime/ftplugin/json5.vim		@dkearns
 runtime/ftplugin/jsonc.vim		@izhakjakov
@@ -273,6 +273,7 @@ runtime/ftplugin/scss.vim		@tpope
 runtime/ftplugin/sdoc.vim		@gpanders
 runtime/ftplugin/sed.vim		@dkearns
 runtime/ftplugin/sh.vim			@dkearns
+runtime/ftplugin/shaderslang.vim        @mTvare6
 runtime/ftplugin/slint.vim		@ribru17
 runtime/ftplugin/snakemake.vim		@ribru17
 runtime/ftplugin/solidity.vim		@cothi
@@ -291,6 +292,7 @@ runtime/ftplugin/tcsh.vim		@dkearns
 runtime/ftplugin/terraform.vim		@JannoTjarks
 runtime/ftplugin/tf.vim			@ribru17
 runtime/ftplugin/thrift.vim		@jiangyinzuo
+runtime/ftplugin/tiasm.vim		@Freed-Wu
 runtime/ftplugin/tidy.vim		@dkearns
 runtime/ftplugin/tmux.vim		@ericpruitt
 runtime/ftplugin/toml.vim		@averms
@@ -506,7 +508,7 @@ runtime/syntax/jargon.vim		@h3xx
 runtime/syntax/java.vim			@zzzyxwvut
 runtime/syntax/javascript.vim		@fleiner
 runtime/syntax/jinja.vim		@gpanders
-runtime/syntax/jj.vim			@gpanders
+runtime/syntax/jjdescription.vim	@gpanders
 runtime/syntax/json.vim		        @vito-c
 runtime/syntax/jsonc.vim		@izhakjakov
 runtime/syntax/julia.vim		@carlobaldassi
@@ -590,6 +592,7 @@ runtime/syntax/scss.vim			@tpope
 runtime/syntax/sdoc.vim			@gpanders
 runtime/syntax/sed.vim			@dkearns
 runtime/syntax/shared/debversions.vim	@jamessan
+runtime/syntax/shaderslang.vim          @mTvare6
 runtime/syntax/solidity.vim		@cothi
 runtime/syntax/spec.vim			@ignatenkobrain
 runtime/syntax/sqloracle.vim		@chrisbra
@@ -608,6 +611,7 @@ runtime/syntax/tcsh.vim			@dkearns
 runtime/syntax/teraterm.vim		@k-takata
 runtime/syntax/terraform.vim		@gpanders
 runtime/syntax/thrift.vim		@jiangyinzuo
+runtime/syntax/tiasm.vim		@Freed-Wu
 runtime/syntax/tidy.vim			@dkearns
 runtime/syntax/tmux.vim			@ericpruitt
 runtime/syntax/toml.vim			@averms

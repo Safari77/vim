@@ -3281,7 +3281,15 @@ exec_instructions(ectx_T *ectx)
 		trycmd_T *trycmd = ((trycmd_T *)trystack->ga_data)
 							+ trystack->ga_len - 1;
 		if (trycmd->tcd_frame_idx == ectx->ec_frame_idx)
-		    trycmd->tcd_caught = FALSE;
+		{
+		    if (trycmd->tcd_caught)
+		    {
+			// Inside a "catch" we need to first discard the caught
+			// exception.
+			finish_exception(caught_stack);
+			trycmd->tcd_caught = FALSE;
+		    }
+		}
 	    }
 	}
 
@@ -4844,6 +4852,21 @@ exec_instructions(ectx_T *ectx)
 		int arg_set = tv->v_type != VAR_UNKNOWN
 				&& !(tv->v_type == VAR_SPECIAL
 					    && tv->vval.v_number == VVAL_NONE);
+
+		if (iptr->isn_type == ISN_JUMP_IF_ARG_NOT_SET && !arg_set)
+		{
+		    dfunc_T *df = ((dfunc_T *)def_functions.ga_data)
+							+ ectx->ec_dfunc_idx;
+		    ufunc_T *ufunc = df->df_ufunc;
+		    // jump_arg_off is negative for arguments
+		    size_t argidx = ufunc->uf_def_args.ga_len
+					+ iptr->isn_arg.jumparg.jump_arg_off
+					+ STACK_FRAME_SIZE;
+		    type_T *t = ufunc->uf_arg_types[argidx];
+		    CLEAR_POINTER(tv);
+		    tv->v_type = t->tt_type;
+		}
+
 		if (iptr->isn_type == ISN_JUMP_IF_ARG_SET ? arg_set : !arg_set)
 		    ectx->ec_iidx = iptr->isn_arg.jumparg.jump_where;
 		break;
@@ -4957,6 +4980,12 @@ exec_instructions(ectx_T *ectx)
 		    // Reset the index to avoid a return statement jumps here
 		    // again.
 		    trycmd->tcd_finally_idx = 0;
+		    if (trycmd->tcd_caught)
+		    {
+			// discard the exception
+			finish_exception(caught_stack);
+			trycmd->tcd_caught = FALSE;
+		    }
 		    break;
 		}
 
@@ -4971,12 +5000,10 @@ exec_instructions(ectx_T *ectx)
 		    trycmd = ((trycmd_T *)trystack->ga_data) + trystack->ga_len;
 		    if (trycmd->tcd_did_throw)
 			did_throw = TRUE;
-		    if (trycmd->tcd_caught && current_exception != NULL)
+		    if (trycmd->tcd_caught)
 		    {
 			// discard the exception
-			if (caught_stack == current_exception)
-			    caught_stack = caught_stack->caught;
-			discard_current_exception();
+			finish_exception(caught_stack);
 		    }
 
 		    if (trycmd->tcd_return)
@@ -5025,12 +5052,10 @@ exec_instructions(ectx_T *ectx)
 		    {
 			trycmd_T    *trycmd = ((trycmd_T *)trystack->ga_data)
 							+ trystack->ga_len - 1;
-			if (trycmd->tcd_caught && current_exception != NULL)
+			if (trycmd->tcd_caught)
 			{
 			    // discard the exception
-			    if (caught_stack == current_exception)
-				caught_stack = caught_stack->caught;
-			    discard_current_exception();
+			    finish_exception(caught_stack);
 			    trycmd->tcd_caught = FALSE;
 			}
 		    }
@@ -5718,6 +5743,17 @@ exec_instructions(ectx_T *ectx)
 
 		    // The members are located right after the object struct.
 		    typval_T *mtv = ((typval_T *)(obj + 1)) + idx;
+		    if (mtv->v_type == VAR_UNKNOWN)
+		    {
+			// Referencing an object variable (without a type)
+			// which is not yet initialized.  So the type is not
+			// yet known.
+			ocmember_T *m = &obj->obj_class->class_obj_members[idx];
+			SOURCING_LNUM = iptr->isn_lnum;
+			semsg(_(e_uninitialized_object_var_reference),
+				m->ocm_name);
+			goto on_error;
+		    }
 		    copy_tv(mtv, tv);
 
 		    // Unreference the object after getting the member, it may
