@@ -146,7 +146,6 @@ edit(
 #ifdef FEAT_CONCEAL
     int		cursor_line_was_concealed;
 #endif
-    int		ins_completion = FALSE;
 
     // Remember whether editing was restarted after CTRL-O.
     did_restart_edit = restart_edit;
@@ -416,14 +415,10 @@ edit(
      * Get the current length of the redo buffer, those characters have to be
      * skipped if we want to get to the inserted characters.
      */
-    ptr = get_inserted();
-    if (ptr == NULL)
-	new_insert_skip = 0;
-    else
-    {
-	new_insert_skip = (int)STRLEN(ptr);
-	vim_free(ptr);
-    }
+    string_T inserted = get_inserted();
+    new_insert_skip = (int)inserted.length;
+    if (inserted.string != NULL)
+	vim_free(inserted.string);
 
     old_indent = 0;
 
@@ -637,11 +632,8 @@ edit(
 	 * and the cursor is still in the completed word.  Only when there is
 	 * a match, skip this when no matches were found.
 	 */
-	ins_completion = ins_compl_active()
-	    && curwin->w_cursor.col >= ins_compl_col()
-	    && ins_compl_has_shown_match();
-
-	if (ins_completion && pum_wanted())
+	if (ins_compl_active() && curwin->w_cursor.col >= ins_compl_col()
+		&& ins_compl_has_shown_match() && pum_wanted())
 	{
 	    // BS: Delete one character from "compl_leader".
 	    if ((c == K_BS || c == Ctrl_H)
@@ -699,8 +691,6 @@ edit(
 		    ins_compl_delete();
 	    }
 	}
-	else if (ins_completion && !pum_wanted() && ins_compl_preinsert_effect())
-	    ins_compl_delete();
 
 	// Prepare for or stop CTRL-X mode.  This doesn't do completion, but
 	// it does fix up the text when finishing completion.
@@ -2451,7 +2441,7 @@ stop_insert(
     int		nomove)			// <c-\><c-o>, don't move cursor
 {
     int		cc;
-    char_u	*ptr;
+    string_T	inserted;
 
     stop_redo_ins();
     replace_flush();		// abandon replace stack
@@ -2461,16 +2451,16 @@ stop_insert(
      * Don't do it when "restart_edit" was set and nothing was inserted,
      * otherwise CTRL-O w and then <Left> will clear "last_insert".
      */
-    ptr = get_inserted();
-    int added = ptr == NULL ? 0 : (int)STRLEN(ptr) - new_insert_skip;
+    inserted = get_inserted();
+    int added = inserted.string == NULL ? 0 : (int)inserted.length - new_insert_skip;
     if (did_restart_edit == 0 || added > 0)
     {
 	vim_free(last_insert);
-	last_insert = ptr;
+	last_insert = inserted.string;
 	last_insert_skip = added < 0 ? 0 : new_insert_skip;
     }
     else
-	vim_free(ptr);
+	vim_free(inserted.string);
 
     if (!arrow_used && end_insert_pos != NULL)
     {
@@ -2993,11 +2983,11 @@ get_last_insert_save(void)
 
     if (last_insert == NULL)
 	return NULL;
-    s = vim_strsave(last_insert + last_insert_skip);
+    len = (int)STRLEN(last_insert + last_insert_skip);
+    s = vim_strnsave(last_insert + last_insert_skip, len);
     if (s == NULL)
 	return NULL;
 
-    len = (int)STRLEN(s);
     if (len > 0 && s[len - 1] == ESC)	// remove trailing ESC
 	s[len - 1] = NUL;
     return s;

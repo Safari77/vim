@@ -171,6 +171,9 @@ get_recorded(void)
     size_t	len;
 
     p = get_buffcont(&recordbuff, TRUE, &len);
+    if (p == NULL)
+	return NULL;
+
     free_buff(&recordbuff);
 
     /*
@@ -197,10 +200,13 @@ get_recorded(void)
  * Return the contents of the redo buffer as a single string.
  * K_SPECIAL and CSI in the returned string are escaped.
  */
-    char_u *
+    string_T
 get_inserted(void)
 {
-    return get_buffcont(&redobuff, FALSE, NULL);
+    size_t len = 0;
+    char_u* str = get_buffcont(&redobuff, FALSE, &len);
+    string_T ret = { str, len };
+    return ret;
 }
 
 /*

@@ -229,8 +229,18 @@ nextwild(
 
     if (xp->xp_numfiles == -1)
     {
-	set_expand_context(xp);
-	cmd_showtail = expand_showtail(xp);
+#ifdef FEAT_EVAL
+        if (ccline->input_fn && ccline->xp_context == EXPAND_COMMANDS)
+	{
+	    // Expand commands typed in input() function
+	    set_cmd_context(xp, ccline->cmdbuff, ccline->cmdlen, ccline->cmdpos, FALSE);
+        }
+        else
+#endif
+        {
+	    set_expand_context(xp);
+        }
+        cmd_showtail = expand_showtail(xp);
     }
 
     if (xp->xp_context == EXPAND_UNSUCCESSFUL)
@@ -276,6 +286,9 @@ nextwild(
 	{
 	    int use_options = options |
 		    WILD_HOME_REPLACE|WILD_ADD_SLASH|WILD_SILENT;
+	    if (use_options & WILD_KEEP_SOLE_ITEM)
+		use_options &= ~WILD_KEEP_SOLE_ITEM;
+
 	    if (escape)
 		use_options |= WILD_ESCAPE;
 
@@ -330,7 +343,7 @@ nextwild(
 
     if (xp->xp_numfiles <= 0 && p2 == NULL)
 	beep_flush();
-    else if (xp->xp_numfiles == 1)
+    else if (xp->xp_numfiles == 1 && !(options & WILD_KEEP_SOLE_ITEM))
 	// free expanded pattern
 	(void)ExpandOne(xp, NULL, NULL, 0, WILD_FREE);
 
