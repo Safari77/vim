@@ -1930,7 +1930,7 @@ getcmdline_int(
 	if (end_wildmenu)
 	{
 	    if (cmdline_pum_active())
-		cmdline_pum_remove();
+		cmdline_pum_remove(&ccline);
 	    if (xpc.xp_numfiles != -1)
 		(void)ExpandOne(&xpc, NULL, NULL, 0, WILD_FREE);
 	    did_wild_list = FALSE;
@@ -2556,7 +2556,7 @@ returncmd:
     // if certain special keys like <Esc> or <C-\> were used as wildchar. Make
     // sure to still clean up to avoid memory corruption.
     if (cmdline_pum_active())
-	cmdline_pum_remove();
+	cmdline_pum_remove(&ccline);
     wildmenu_cleanup(&ccline);
     did_wild_list = FALSE;
     wim_index = 0;
@@ -4716,7 +4716,7 @@ open_cmdwin(void)
     State = MODE_NORMAL;
     setmouse();
 
-    // Reset here so it can be set by a CmdWinEnter autocommand.
+    // Reset here so it can be set by a CmdwinEnter autocommand.
     cmdwin_result = 0;
 
     // Trigger CmdwinEnter autocommands.

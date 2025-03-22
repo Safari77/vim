@@ -217,7 +217,6 @@ static int ins_compl_add(char_u *str, int len, char_u *fname, char_u **cptext, t
 static void ins_compl_longest_match(compl_T *match);
 static void ins_compl_del_pum(void);
 static void ins_compl_files(int count, char_u **files, int thesaurus, int flags, regmatch_T *regmatch, char_u *buf, int *dir);
-static char_u *find_line_end(char_u *ptr);
 static void ins_compl_free(void);
 static int  ins_compl_need_restart(void);
 static void ins_compl_new_leader(void);
@@ -765,17 +764,14 @@ ins_compl_add_infercase(
     static int
 cfc_has_mode(void)
 {
-    switch (ctrl_x_mode)
-    {
-	case CTRL_X_NORMAL:
-	    return (cfc_flags & CFC_KEYWORD) != 0;
-	case CTRL_X_FILES:
-	    return (cfc_flags & CFC_FILES) != 0;
-	case CTRL_X_WHOLE_LINE:
-	    return (cfc_flags & CFC_WHOLELINE) != 0;
-	default:
-	    return FALSE;
-    }
+    if (ctrl_x_mode_normal() || ctrl_x_mode_dictionary())
+	return (cfc_flags & CFC_KEYWORD) != 0;
+    else if (ctrl_x_mode_files())
+	return (cfc_flags & CFC_FILES) != 0;
+    else if (ctrl_x_mode_whole_line())
+	return (cfc_flags & CFC_WHOLELINE) != 0;
+    else
+	return FALSE;
 }
 
 /*
@@ -1793,7 +1789,7 @@ ins_compl_files(
     int		add_r;
     char_u	*leader = NULL;
     int		leader_len = 0;
-    int		in_fuzzy_collect = cfc_has_mode() && ctrl_x_mode_normal();
+    int		in_fuzzy_collect = cfc_has_mode();
     int		score = 0;
     int		len = 0;
     char_u	*line_end = NULL;
@@ -1870,8 +1866,6 @@ ins_compl_files(
 				&& score == compl_first_match->cp_next->cp_score)
 			    compl_num_bests++;
 		    }
-		    else if (find_word_end(ptr) == line_end)
-			break;
 		}
 	    }
 	    line_breakcheck();
@@ -1927,7 +1921,7 @@ find_word_end(char_u *ptr)
  * Find the end of the line, omitting CR and NL at the end.
  * Returns a pointer to just after the line.
  */
-    static char_u *
+    char_u *
 find_line_end(char_u *ptr)
 {
     char_u	*s;
@@ -2546,6 +2540,10 @@ ins_compl_stop(int c, int prev_mode, int retval)
 {
     int		want_cindent;
     char_u	*word = NULL;
+
+    // Remove pre-inserted text when present.
+    if (ins_compl_preinsert_effect())
+	ins_compl_delete();
 
     // Get here when we have finished typing a sequence of ^N and
     // ^P or other completion characters in CTRL-X mode.  Free up
@@ -3674,7 +3672,7 @@ process_next_cpt_value(
 	ins_compl_next_state_T *st,
 	int		*compl_type_arg,
 	pos_T		*start_match_pos,
-	int		in_fuzzy)
+	int		fuzzy_collect)
 {
     int	    compl_type = -1;
     int	    status = INS_COMPL_CPT_OK;
@@ -3690,7 +3688,7 @@ process_next_cpt_value(
 	st->first_match_pos = *start_match_pos;
 	// Move the cursor back one character so that ^N can match the
 	// word immediately after the cursor.
-	if (ctrl_x_mode_normal() && (!in_fuzzy && dec(&st->first_match_pos) < 0))
+	if (ctrl_x_mode_normal() && (!fuzzy_collect && dec(&st->first_match_pos) < 0))
 	{
 	    // Move the cursor to after the last character in the
 	    // buffer, so that word at start of buffer is found
@@ -4490,7 +4488,6 @@ ins_compl_get_exp(pos_T *ini)
     int		i;
     int		found_new_match;
     int		type = ctrl_x_mode;
-    int		in_fuzzy = (get_cot_flags() & COT_FUZZY) != 0;
 
     if (!compl_started)
     {
@@ -4531,7 +4528,7 @@ ins_compl_get_exp(pos_T *ini)
 	if ((ctrl_x_mode_normal() || ctrl_x_mode_line_or_eval())
 					&& (!compl_started || st.found_all))
 	{
-	    int status = process_next_cpt_value(&st, &type, ini, in_fuzzy);
+	    int status = process_next_cpt_value(&st, &type, ini, cfc_has_mode());
 
 	    if (status == INS_COMPL_CPT_END)
 		break;
