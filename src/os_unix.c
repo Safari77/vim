@@ -5289,14 +5289,13 @@ mch_call_shell_fork(
 		    else if (wpid == 0) // child
 		    {
 			linenr_T    lnum = curbuf->b_op_start.lnum;
-			int	    written = 0;
+			size_t	    written = 0;
 			char_u	    *lp = ml_get(lnum);
 			size_t	    lplen = (size_t)ml_get_len(lnum);
 
 			close(fromshell_fd);
 			for (;;)
 			{
-			    lplen -= written;
 			    if (lplen == 0)
 				len = 0;
 			    else if (lp[written] == NL)
@@ -5307,10 +5306,10 @@ mch_call_shell_fork(
 				char_u	*s = vim_strchr(lp + written, NL);
 
 				len = write(toshell_fd, (char *)lp + written,
-					   s == NULL ? lplen
+					   s == NULL ? lplen - written
 					      : (size_t)(s - (lp + written)));
 			    }
-			    if (len == (int)lplen)
+			    if (len == (int)(lplen - written))
 			    {
 				// Finished a line, add a NL, unless this line
 				// should not have one.
@@ -5334,7 +5333,7 @@ mch_call_shell_fork(
 				written = 0;
 			    }
 			    else if (len > 0)
-				written += len;
+				written += (size_t)len;
 			}
 			_exit(0);
 		    }
