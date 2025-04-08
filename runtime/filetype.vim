@@ -53,7 +53,7 @@ endfunc
 
 " Vim help file, set ft explicitly, because 'modeline' might be off
 au BufNewFile,BufRead */doc/*.txt
-	\  if getline('$') =~ '\(^\|\s\)vim:.*\<\(ft\|filetype\)=help\>'
+	\  if getline('$') =~ '\%(^\|\s\)vim:\%(.*\%(:\|\s\)\)\?\%(ft\|filetype\)=help\%(:\|\s\|$\)'
 	\|   setf help
 	\| endif
 
@@ -560,6 +560,9 @@ au BufNewFile,BufRead *.cu,*.cuh		setf cuda
 
 " Cue
 au BufNewFile,BufRead *.cue			setf cue
+
+" DAX
+au BufNewFile,BufRead *.dax			setf dax
 
 " Debian devscripts
 au BufNewFile,BufRead devscripts.conf,.devscripts	setf sh
@@ -1963,6 +1966,9 @@ au BufNewFile,BufRead *.inc			call dist#ft#FTinc()
 au BufNewFile,BufRead	*.ps1,*.psd1,*.psm1,*.pssc	setf ps1
 au BufNewFile,BufRead	*.ps1xml			setf ps1xml
 au BufNewFile,BufRead	*.cdxml,*.psc1			setf xml
+
+" Power Query M
+au BufNewFile,BufRead *.pq			setf pq
 
 " Printcap and Termcap
 au BufNewFile,BufRead *printcap

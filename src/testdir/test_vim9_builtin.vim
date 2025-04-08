@@ -1648,6 +1648,7 @@ def Test_foldtextresult()
 enddef
 
 def Test_foreach()
+  CheckFeature job
   v9.CheckSourceDefAndScriptFailure(['foreach(test_null_job(), "")'], ['E1013: Argument 1: type mismatch, expected list<any> but got job', 'E1251: List, Tuple, Dictionary, Blob or String required for argument 1'])
 enddef
 
@@ -2430,7 +2431,7 @@ def Test_instanceof()
     enddef
     Bar()
   END
-  v9.CheckSourceScriptFailure(lines, 'E1013: Argument 1: type mismatch, expected object<Unknown> but got string')
+  v9.CheckSourceScriptFailure(lines, 'E1013: Argument 1: type mismatch, expected object<any> but got string')
 
   lines =<< trim END
     vim9script

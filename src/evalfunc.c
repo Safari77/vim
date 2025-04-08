@@ -308,7 +308,7 @@ arg_object(type_T *type, type_T *decl_type UNUSED, argcontext_T *context)
     if (type->tt_type == VAR_OBJECT
 	    || type_any_or_unknown(type))
 	return OK;
-    arg_type_mismatch(&t_object, type, context->arg_idx + 1);
+    arg_type_mismatch(&t_object_any, type, context->arg_idx + 1);
     return FAIL;
 }
 
@@ -9164,7 +9164,7 @@ get_matches_in_str(
 	if (d == NULL)
 	    return FAIL;
 	if (list_append_dict(mlist, d) == FAIL)
-	    return FAIL;;
+	    return FAIL;
 
 	if (dict_add_number(d, matchbuf ? "lnum" : "idx", idx) == FAIL)
 	    return FAIL;
