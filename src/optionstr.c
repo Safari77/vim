@@ -327,6 +327,7 @@ check_buf_options(buf_T *buf)
     check_string_option(&buf->b_p_keymap);
 #endif
 #ifdef FEAT_QUICKFIX
+    check_string_option(&buf->b_p_gefm);
     check_string_option(&buf->b_p_gp);
     check_string_option(&buf->b_p_mp);
     check_string_option(&buf->b_p_efm);
@@ -3559,8 +3560,6 @@ did_set_tabpanelopt(optset_T *args)
 {
     if (tabpanelopt_changed() == FAIL)
 	return e_invalid_argument;
-
-    shell_new_columns();
 
     return NULL;
 }
