@@ -1371,8 +1371,11 @@ do_buffer_ext(
     }
     else
     {
+	int help_only = (flags & DOBUF_SKIPHELP) != 0 && buf->b_help;
+
 	bp = NULL;
-	while (count > 0 || (!unload && !buf->b_p_bl && bp != buf))
+	while (count > 0 || (bp != buf && !unload
+				&& !(help_only ? buf->b_help : buf->b_p_bl)))
 	{
 	    // remember the buffer where we start, we come back there when all
 	    // buffers are unlisted.
@@ -1390,14 +1393,17 @@ do_buffer_ext(
 		if (buf == NULL)
 		    buf = lastbuf;
 	    }
+	    // Avoid non-help buffers if the starting point was a help buffer
+	    // and vice-versa.
 	    // Don't count unlisted buffers.
-	    // Avoid non-help buffers if the starting point was a non-help buffer and
-	    // vice-versa.
-	    if (unload || (buf->b_p_bl
-			&& ((flags & DOBUF_SKIPHELP) == 0 || buf->b_help == bp->b_help)))
+	    if (unload
+		    || (help_only
+			? buf->b_help
+			: (buf->b_p_bl && ((flags & DOBUF_SKIPHELP) == 0
+							    || !buf->b_help))))
 	    {
-		 --count;
-		 bp = NULL;	// use this buffer as new starting point
+		--count;
+		bp = NULL;	// use this buffer as new starting point
 	    }
 	    if (bp == buf)
 	    {
@@ -1997,9 +2003,6 @@ enter_buffer(buf_T *buf)
     // mark cursor position as being invalid
     curwin->w_valid = 0;
 
-    buflist_setfpos(curbuf, curwin, curbuf->b_last_cursor.lnum,
-					      curbuf->b_last_cursor.col, TRUE);
-
     // Make sure the buffer is loaded.
     if (curbuf->b_ml.ml_mfp == NULL)	// need to load the file
     {
@@ -2506,6 +2509,8 @@ free_buf_options(
     free_callback(&buf->b_ofu_cb);
     clear_string_option(&buf->b_p_tsrfu);
     free_callback(&buf->b_tsrfu_cb);
+    clear_cpt_callbacks(&buf->b_p_cpt_cb, buf->b_p_cpt_count);
+    buf->b_p_cpt_count = 0;
 #endif
 #ifdef FEAT_QUICKFIX
     clear_string_option(&buf->b_p_gefm);
@@ -2940,12 +2945,14 @@ ExpandBufnames(
 	    {
 		p = NULL;
 		// first try matching with the short file name
-		if ((score = fuzzy_match_str(buf->b_sfname, pat)) != 0)
+		if ((score = fuzzy_match_str(buf->b_sfname, pat))
+			!= FUZZY_SCORE_NONE)
 		    p = buf->b_sfname;
 		if (p == NULL)
 		{
 		    // next try matching with the full path file name
-		    if ((score = fuzzy_match_str(buf->b_ffname, pat)) != 0)
+		    if ((score = fuzzy_match_str(buf->b_ffname, pat))
+			    != FUZZY_SCORE_NONE)
 			p = buf->b_ffname;
 		}
 	    }

@@ -69,4 +69,9 @@ int ins_complete(int c, int enable_pum);
 void free_insexpand_stuff(void);
 int ins_compl_cancel(void);
 void f_complete_match(typval_T *argvars, typval_T *rettv);
+int ins_compl_setup_autocompl(int c);
+void set_buflocal_cpt_callbacks(buf_T *buf);
+int set_cpt_callbacks(optset_T *args);
+void clear_cpt_callbacks(callback_T **cb, int count);
+int set_ref_in_cpt_callbacks(callback_T *callbacks, int count, int copyID);
 /* vim: set ft=c : */

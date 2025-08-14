@@ -7358,6 +7358,9 @@ buf_copy_options(buf_T *buf, int flags)
 	    }
 	    buf->b_p_cpt = vim_strsave(p_cpt);
 	    COPY_OPT_SCTX(buf, BV_CPT);
+#ifdef FEAT_COMPL_FUNC
+	    set_buflocal_cpt_callbacks(buf);
+#endif
 #ifdef BACKSLASH_IN_FILENAME
 	    buf->b_p_csl = vim_strsave(p_csl);
 	    COPY_OPT_SCTX(buf, BV_CSL);
@@ -7953,7 +7956,7 @@ match_str(
 	int score;
 
 	score = fuzzy_match_str(str, fuzzystr);
-	if (score != 0)
+	if (score != FUZZY_SCORE_NONE)
 	{
 	    if (!test_only)
 	    {
