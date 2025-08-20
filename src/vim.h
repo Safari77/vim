@@ -2306,6 +2306,7 @@ typedef enum {
     CLIPMETHOD_NONE,
     CLIPMETHOD_WAYLAND,
     CLIPMETHOD_X11,
+    CLIPMETHOD_GUI
 } clipmethod_T;
 
 // Info about selected text
