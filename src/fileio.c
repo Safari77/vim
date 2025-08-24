@@ -3942,6 +3942,65 @@ vim_rename(char_u *from, char_u *to)
     return 0;
 }
 
+/* Copy the regular file open on SRC_FD to DST_FD, using a buffer for temporary
+   storage. Copy no more than MAX_N_READ bytes. Set *TOTAL_N_READ to the number
+   of bytes read. Return true upon successful completion; print a diagnostic
+   and return false upon error.  */
+static bool portable_copy_file(int src_fd, int dest_fd, size_t max_n_read, off_t *total_n_read)
+{
+    *total_n_read = 0;
+    char buf[131072];
+
+#ifdef __linux__
+    // Try using copy_file_range on Linux first
+    while (max_n_read > 0)
+    {
+        ssize_t n_copied = copy_file_range(src_fd, NULL, dest_fd, NULL,
+                                           MIN(max_n_read, INT_MAX), 0);
+        if (n_copied > 0)
+        {
+            max_n_read -= n_copied;
+            *total_n_read += n_copied;
+        }
+        else if (n_copied == 0)
+        {
+            break; // EOF
+        }
+        else
+        {
+            if (errno == EINTR)
+                continue;
+
+            if (errno == EIO || errno == ENOMEM || errno == ENOSPC || errno == EDQUOT) return false;
+            break; // Probably not supported
+        }
+    }
+#endif
+
+    // Read/write loop for non-Linux or when copy_file_range fails
+    while (max_n_read > 0)
+    {
+        ssize_t n_read, n_write;
+
+        do
+        {
+            n_read = read(src_fd, buf, MIN(max_n_read, sizeof(buf)));
+        } while ((n_read == -1) && (errno == EINTR));
+        if (n_read == -1) return false;
+        if (n_read == 0) break;
+
+        do
+        {
+            n_write = write(dest_fd, buf, n_read);
+        } while ((n_write == -1) && (errno == EINTR));
+        if (n_write <= 0) return false;
+
+        max_n_read -= n_read;
+        *total_n_read += n_read;
+    }
+
+    return true;
+}
 
 /*
  * Create the new file with same permissions as the original.
@@ -3952,7 +4011,7 @@ vim_copyfile(char_u *from, char_u *to)
 {
     int		fd_in;
     int		fd_out;
-    int		n;
+    size_t	n, n_read;
     char	*errmsg = NULL;
     char	buffer[WRITEBUFSIZE];
     long	perm;
@@ -4013,15 +4072,11 @@ vim_copyfile(char_u *from, char_u *to)
     }
     fchmod(fd_out, perm);
 
-    while ((n = read_eintr(fd_in, buffer, sizeof(buffer))) > 0)
-	if (write_eintr(fd_out, buffer, n) != n)
-	{
-	    errmsg = _(e_error_writing_to_str);
-	    break;
-	}
-
+    if (portable_copy_file(fd_in, fd_out, n, &n_read) == false) {
+	errmsg = _(e_error_writing_to_str);
+    }
     close(fd_in);
-    if (n < 0)
+    if (n_read != n)
     {
 	errmsg = _(e_error_reading_str);
 	to = from;
