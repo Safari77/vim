@@ -1421,29 +1421,25 @@ buf_write(
 		// Try to create the backup file
 		if (backup != NULL)
 		{
-		    // remove old backup, if present
-		    mch_remove(backup);
-		    // Open with O_EXCL to avoid the file being created while
-		    // we were sleeping (symlink hacker attack?). Reset umask
-		    // if possible to avoid mch_setperm() below.
+		    char_u backupfn[MAXPATHL + 1];
 #ifdef UNIX
 		    umask_save = umask(0);
 #endif
-		    bfd = mch_open((char *)backup,
-				O_WRONLY|O_CREAT|O_EXTRA|O_EXCL|O_NOFOLLOW,
-								 perm & 0777);
+		    vim_snprintf(backupfn, sizeof(backupfn), "%s.tmp.XXXXXX", backup);
+		    bfd = mkstemp(backupfn);
 #ifdef UNIX
 		    (void)umask(umask_save);
 #endif
-		    if (bfd < 0)
+		    if (bfd == -1) {
 			VIM_CLEAR(backup);
+		    }
 		    else
 		    {
 			// Set file protection same as original file, but
 			// strip s-bit.  Only needed if umask() wasn't used
 			// above.
 #ifndef UNIX
-			(void)mch_setperm(backup, perm & 0777);
+			(void)mch_setperm(backupfn, perm & 0777);
 #else
 			// Try to set the group of the backup same as the
 			// original file. If this fails, set the protection
@@ -1454,13 +1450,13 @@ buf_write(
 				&& fchown(bfd, (uid_t)-1, st_old.st_gid) != 0
 # endif
 						)
-			    mch_setperm(backup,
+			    mch_setperm(backupfn,
 					  (perm & 0707) | ((perm & 07) << 3));
 # if defined(HAVE_SELINUX) || defined(HAVE_SMACK)
-			mch_copy_sec(fname, backup);
+			mch_copy_sec(fname, backupfn);
 # endif
 # ifdef FEAT_XATTR
-			mch_copy_xattr(fname, backup);
+			mch_copy_xattr(fname, backupfn);
 # endif
 #endif
 
@@ -1484,27 +1480,31 @@ buf_write(
 			    }
 			}
 
+			if (write_info.bw_len < 0)
+			    errmsg = (char_u *)_(e_cant_read_file_for_backup_add_bang_to_write_anyway);
+#ifdef UNIX
+			set_file_time(backupfn, st_old.st_atime, st_old.st_mtime);
+#endif
+#ifdef HAVE_ACL
+			mch_set_acl(backupfn, acl);
+#endif
+#if defined(HAVE_SELINUX) || defined(HAVE_SMACK)
+			mch_copy_sec(fname, backupfn);
+#endif
+#ifdef FEAT_XATTR
+			mch_copy_xattr(fname, backupfn);
+#endif
+#ifdef MSWIN
+			(void)mch_copy_file_attribute(fname, backupfn);
+#endif
 			if (vim_fsync(bfd) < 0)
 			    errmsg = _("E999: Error fsyncing \"%s\"");
 			if (close(bfd) < 0 && errmsg == NULL)
 			    errmsg = (char_u *)_(e_close_error_for_backup_file_add_bang_to_write_anyway);
-			if (write_info.bw_len < 0)
-			    errmsg = (char_u *)_(e_cant_read_file_for_backup_add_bang_to_write_anyway);
-#ifdef UNIX
-			set_file_time(backup, st_old.st_atime, st_old.st_mtime);
-#endif
-#ifdef HAVE_ACL
-			mch_set_acl(backup, acl);
-#endif
-#if defined(HAVE_SELINUX) || defined(HAVE_SMACK)
-			mch_copy_sec(fname, backup);
-#endif
-#ifdef FEAT_XATTR
-			mch_copy_xattr(fname, backup);
-#endif
-#ifdef MSWIN
-			(void)mch_copy_file_attribute(fname, backup);
-#endif
+			if (rename(backupfn, backup) == -1) {
+			    errmsg = _("E999: Error renaming backup file \"%s\"");
+			    unlink(backupfn);
+			}
 			break;
 		    }
 		}
