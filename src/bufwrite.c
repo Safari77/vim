@@ -17,8 +17,6 @@
 # include <utime.h>		// for struct utimbuf
 #endif
 
-#define SMALLBUFSIZE	256	// size of emergency write buffer
-
 /*
  * Structure to pass arguments from buf_write() to buf_write_bytes().
  */
@@ -673,7 +671,6 @@ buf_write(
     int		    errmsg_allocated = FALSE;
     char_u	    *errnum = NULL;
     char_u	    *buffer;
-    char_u	    smallbuf[SMALLBUFSIZE];
     char_u	    *backup_ext;
     int		    bufsize;
     long	    perm;		    // file permissions
@@ -1049,15 +1046,8 @@ buf_write(
     msg_scroll = FALSE;		    // always overwrite the file message now
 
     buffer = alloc(WRITEBUFSIZE);
-    if (buffer == NULL)		    // can't allocate big buffer, use small
-				    // one (to be able to write when out of
-				    // memory)
-    {
-	buffer = smallbuf;
-	bufsize = SMALLBUFSIZE;
-    }
-    else
-	bufsize = WRITEBUFSIZE;
+    if (buffer == NULL) goto fail;
+    bufsize = WRITEBUFSIZE;
 
     // Get information about original file (if there is one).
 #if defined(UNIX)
@@ -2373,10 +2363,10 @@ restore_backup:
 							   perm & 0777)) >= 0)
 		    {
 			// copy the file.
-			write_info.bw_buf = smallbuf;
+			write_info.bw_buf = buffer;
 			write_info.bw_flags = FIO_NOCONVERT;
-			while ((write_info.bw_len = read_eintr(fd, smallbuf,
-						      SMALLBUFSIZE)) > 0) {
+			while ((write_info.bw_len = read_eintr(fd, buffer,
+						      WRITEBUFSIZE)) > 0) {
 			    if (buf_write_bytes(&write_info) == FAIL)
 				break;
 			}
@@ -2549,8 +2539,6 @@ nofail:
     buf->b_saving = FALSE;
 
     vim_free(backup);
-    if (buffer != smallbuf)
-	vim_free(buffer);
     vim_free(fenc_tofree);
     vim_free(write_info.bw_conv_buf);
 #ifdef USE_ICONV

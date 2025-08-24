@@ -4993,7 +4993,7 @@ typedef struct {
 } source_cookie_T;
 
 
-#define WRITEBUFSIZE	8192	// size of normal write buffer
+#define WRITEBUFSIZE	65536	// size of normal write buffer
 
 #define FIO_LATIN1	0x01	// convert Latin1
 #define FIO_UTF8	0x02	// convert UTF-8
