@@ -3946,10 +3946,10 @@ vim_rename(char_u *from, char_u *to)
    storage. Copy no more than MAX_N_READ bytes. Set *TOTAL_N_READ to the number
    of bytes read. Return true upon successful completion; print a diagnostic
    and return false upon error.  */
-static bool portable_copy_file(int src_fd, int dest_fd, size_t max_n_read, off_t *total_n_read)
+static bool portable_copy_file(int src_fd, int dest_fd, intmax_t max_n_read, intmax_t *total_n_read)
 {
     *total_n_read = 0;
-    char buf[131072];
+    char rwbuf[131072];
 
 #ifdef __linux__
     // Try using copy_file_range on Linux first
@@ -3984,14 +3984,14 @@ static bool portable_copy_file(int src_fd, int dest_fd, size_t max_n_read, off_t
 
         do
         {
-            n_read = read(src_fd, buf, MIN(max_n_read, sizeof(buf)));
+            n_read = read(src_fd, rwbuf, MIN(max_n_read, sizeof(rwbuf)));
         } while ((n_read == -1) && (errno == EINTR));
         if (n_read == -1) return false;
         if (n_read == 0) break;
 
         do
         {
-            n_write = write(dest_fd, buf, n_read);
+            n_write = write(dest_fd, rwbuf, n_read);
         } while ((n_write == -1) && (errno == EINTR));
         if (n_write <= 0) return false;
 
@@ -4011,9 +4011,8 @@ vim_copyfile(char_u *from, char_u *to)
 {
     int		fd_in;
     int		fd_out;
-    size_t	n, n_read;
+    intmax_t	n, n_read;
     char	*errmsg = NULL;
-    char	buffer[WRITEBUFSIZE];
     long	perm;
     char	tmpfn[MAXPATHL + 1];
 #ifdef HAVE_ACL
@@ -4071,6 +4070,11 @@ vim_copyfile(char_u *from, char_u *to)
 	return FAIL;
     }
     fchmod(fd_out, perm);
+
+    if (fstat(fd_in, &st) == -1) {
+        return FAIL;
+    }
+    n = st.st_size;
 
     if (portable_copy_file(fd_in, fd_out, n, &n_read) == false) {
 	errmsg = _(e_error_writing_to_str);

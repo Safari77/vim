@@ -2539,6 +2539,7 @@ nofail:
     buf->b_saving = FALSE;
 
     vim_free(backup);
+    vim_free(buffer);
     vim_free(fenc_tofree);
     vim_free(write_info.bw_conv_buf);
 #ifdef USE_ICONV
