@@ -1780,7 +1780,7 @@ struct dictitem_S
 {
     typval_T	di_tv;		// type and value of the variable
     char_u	di_flags;	// DI_FLAGS_ flags (only used for variable)
-    char_u	di_key[1];	// key (actually longer!)
+    char_u	di_key[];	// key (actually longer!)
 };
 typedef struct dictitem_S dictitem_T;
 
