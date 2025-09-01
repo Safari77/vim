@@ -845,7 +845,9 @@ $quote	eval.txt	/*$quote*
 'opfunc'	options.txt	/*'opfunc'*
 'optimize'	vi_diff.txt	/*'optimize'*
 'option'	intro.txt	/*'option'*
+'osctimeoutlen'	options.txt	/*'osctimeoutlen'*
 'osfiletype'	options.txt	/*'osfiletype'*
+'ost'	options.txt	/*'ost'*
 'pa'	options.txt	/*'pa'*
 'packpath'	options.txt	/*'packpath'*
 'para'	options.txt	/*'para'*
@@ -4723,6 +4725,7 @@ E1564	remote.txt	/*E1564*
 E1565	remote.txt	/*E1565*
 E1566	remote.txt	/*E1566*
 E1567	remote.txt	/*E1567*
+E1568	options.txt	/*E1568*
 E157	sign.txt	/*E157*
 E158	sign.txt	/*E158*
 E159	sign.txt	/*E159*
@@ -10890,6 +10893,7 @@ term_setrestore()	terminal.txt	/*term_setrestore()*
 term_setsize()	terminal.txt	/*term_setsize()*
 term_start()	terminal.txt	/*term_start()*
 term_wait()	terminal.txt	/*term_wait()*
+termblinkresp-variable	eval.txt	/*termblinkresp-variable*
 termcap	term.txt	/*termcap*
 termcap-changed	version4.txt	/*termcap-changed*
 termcap-colors	term.txt	/*termcap-colors*
@@ -10897,6 +10901,7 @@ termcap-cursor-color	term.txt	/*termcap-cursor-color*
 termcap-cursor-shape	term.txt	/*termcap-cursor-shape*
 termcap-options	term.txt	/*termcap-options*
 termcap-title	term.txt	/*termcap-title*
+termda1-variable	eval.txt	/*termda1-variable*
 termdebug-commands	terminal.txt	/*termdebug-commands*
 termdebug-communication	terminal.txt	/*termdebug-communication*
 termdebug-customizing	terminal.txt	/*termdebug-customizing*
@@ -10960,7 +10965,12 @@ terminal-window	terminal.txt	/*terminal-window*
 terminal.txt	terminal.txt	/*terminal.txt*
 terminalprops()	builtin.txt	/*terminalprops()*
 terminfo	term.txt	/*terminfo*
+termosc-variable	eval.txt	/*termosc-variable*
+termrbgresp-variable	eval.txt	/*termrbgresp-variable*
 termresponse-variable	eval.txt	/*termresponse-variable*
+termrfgresp-variable	eval.txt	/*termrfgresp-variable*
+termstyleresp-variable	eval.txt	/*termstyleresp-variable*
+termu7resp-variable	eval.txt	/*termu7resp-variable*
 ternary	eval.txt	/*ternary*
 test-functions	usr_41.txt	/*test-functions*
 test-functions-details	testing.txt	/*test-functions-details*
@@ -11280,6 +11290,7 @@ v:t_tuple	eval.txt	/*v:t_tuple*
 v:t_typealias	eval.txt	/*v:t_typealias*
 v:termblinkresp	eval.txt	/*v:termblinkresp*
 v:termda1	eval.txt	/*v:termda1*
+v:termosc	eval.txt	/*v:termosc*
 v:termrbgresp	eval.txt	/*v:termrbgresp*
 v:termresponse	eval.txt	/*v:termresponse*
 v:termrfgresp	eval.txt	/*v:termrfgresp*
@@ -11665,6 +11676,7 @@ wayland-seat	wayland.txt	/*wayland-seat*
 wayland-selections	wayland.txt	/*wayland-selections*
 wayland-useful	wayland.txt	/*wayland-useful*
 wayland.txt	wayland.txt	/*wayland.txt*
+wayland_display-variable	eval.txt	/*wayland_display-variable*
 wdl-syntax	syntax.txt	/*wdl-syntax*
 wdl.vim	syntax.txt	/*wdl.vim*
 white-space	pattern.txt	/*white-space*
