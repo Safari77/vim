@@ -131,6 +131,19 @@ static termrequest_T u7_status = TERMREQUEST_INIT;
 static termrequest_T xcc_status = TERMREQUEST_INIT;
 
 #ifdef FEAT_TERMRESPONSE
+# ifdef FEAT_TERMINAL
+// Request foreground color report:
+static termrequest_T rfg_status = TERMREQUEST_INIT;
+static int fg_r = 0;
+static int fg_g = 0;
+static int fg_b = 0;
+static int bg_r = 255;
+static int bg_g = 255;
+static int bg_b = 255;
+# endif
+
+// Request background color report:
+static termrequest_T rbg_status = TERMREQUEST_INIT;
 
 // Request cursor blinking mode report:
 static termrequest_T rbm_status = TERMREQUEST_INIT;
@@ -145,6 +158,10 @@ static termrequest_T *all_termrequests[] = {
     &crv_status,
     &u7_status,
     &xcc_status,
+# ifdef FEAT_TERMINAL
+    &rfg_status,
+# endif
+    &rbg_status,
     &rbm_status,
     &rcs_status,
     &winpos_status,
@@ -4190,6 +4207,49 @@ check_terminal_behavior(void)
     }
 }
 
+/*
+ * Similar to requesting the version string: Request the terminal background
+ * color when it is the right moment.
+ */
+    void
+may_req_bg_color(void)
+{
+    if (can_get_termresponse() && starting == 0)
+    {
+	int didit = FALSE;
+
+# ifdef FEAT_TERMINAL
+	// Only request foreground if t_RF is set.
+	if (rfg_status.tr_progress == STATUS_GET && *T_RFG != NUL)
+	{
+	    MAY_WANT_TO_LOG_THIS;
+	    LOG_TR1("Sending FG request");
+	    out_str(T_RFG);
+	    termrequest_sent(&rfg_status);
+	    didit = TRUE;
+	}
+# endif
+
+	// Only request background if t_RB is set.
+	if (rbg_status.tr_progress == STATUS_GET && *T_RBG != NUL)
+	{
+	    MAY_WANT_TO_LOG_THIS;
+	    LOG_TR1("Sending BG request");
+	    out_str(T_RBG);
+	    termrequest_sent(&rbg_status);
+	    didit = TRUE;
+	}
+
+	if (didit)
+	{
+	    // check for the characters now, otherwise they might be eaten by
+	    // get_keystroke()
+	    out_flush();
+	    (void)vpeekc_nomap();
+	}
+    }
+}
+
 #endif
 
 /*
@@ -4983,6 +5043,8 @@ handle_u7_response(int *arg, char_u *tp UNUSED, int csi_len UNUSED)
     }
 }
 
+
+
 /*
  * Handle a response to T_CRV: {lead}{first}{x};{vers};{y}c
  * Xterm and alike use '>' for {first}.
@@ -5294,6 +5356,37 @@ put_key_modifiers_in_typebuf(
 }
 
 /*
+ * Parse the number from a CSI numbered sequence for an F1-F12 key:
+ *	ESC [ {number} ~
+ * Returns the key
+ */
+    static int
+parse_csi_f_keys(int arg)
+{
+    char_u key_name[2] = "";
+
+    switch (arg)
+    {
+	case 11: key_name[0] = 'k'; key_name[1] = '1'; break;  // K_F1
+	case 12: key_name[0] = 'k'; key_name[1] = '2'; break;  // K_F2
+	case 13: key_name[0] = 'k'; key_name[1] = '3'; break;  // K_F3
+	case 14: key_name[0] = 'k'; key_name[1] = '4'; break;  // K_F4
+	case 15: key_name[0] = 'k'; key_name[1] = '5'; break;  // K_F5
+	case 17: key_name[0] = 'k'; key_name[1] = '6'; break;  // K_F6
+	case 18: key_name[0] = 'k'; key_name[1] = '7'; break;  // K_F7
+	case 19: key_name[0] = 'k'; key_name[1] = '8'; break;  // K_F8
+	case 20: key_name[0] = 'k'; key_name[1] = '9'; break;  // K_F9
+	case 21: key_name[0] = 'F'; key_name[1] = ';'; break;  // K_F10
+	case 23: key_name[0] = 'F'; key_name[1] = '1'; break;  // K_F11
+	case 24: key_name[0] = 'F'; key_name[1] = '2'; break;  // K_F12
+    }
+    if (key_name[0])
+	return TERMCAP2KEY(key_name[0], key_name[1]);
+    // shouldn't happen
+    return arg;
+}
+
+/*
  * Handle a sequence with key and modifier, one of:
  *	{lead}27;{modifier};{key}~
  *	{lead}{key};{modifier}u
@@ -5302,12 +5395,13 @@ put_key_modifiers_in_typebuf(
     static int
 handle_key_with_modifier(
 	int	*arg,
-	int	trail,
 	int	csi_len,
 	int	offset,
 	char_u	*buf,
 	int	bufsize,
-	int	*buflen)
+	int	*buflen,
+	int	iskitty,
+	int	trail)
 {
     // Only set seenModifyOtherKeys for the "{lead}27;" code to avoid setting
     // it for terminals using the kitty keyboard protocol.  Xterm sends
@@ -5320,7 +5414,7 @@ handle_key_with_modifier(
     //
     // Do not set seenModifyOtherKeys for kitty, it does send some sequences
     // like this but does not have the modifyOtherKeys feature.
-    if (trail != 'u'
+    if (!iskitty
 	    && (kitty_protocol_state == KKPS_INITIAL
 		|| kitty_protocol_state == KKPS_OFF
 		|| kitty_protocol_state == KKPS_AFTER_T_TE)
@@ -5332,7 +5426,7 @@ handle_key_with_modifier(
 	seenModifyOtherKeys = TRUE;
     }
 
-    int key = trail == 'u' ? arg[0] : arg[2];
+    int key = iskitty ? arg[0] : arg[2];
     int modifiers = decode_modifiers(arg[1]);
 
     // Some terminals do not apply the Shift modifier to the key.  To make
@@ -5345,13 +5439,17 @@ handle_key_with_modifier(
     if (key == ESC)
 	key = K_ESC;
 
-    return put_key_modifiers_in_typebuf(key, modifiers,
-					csi_len, offset, buf, bufsize, buflen);
+    else if (arg[0] >= 11 && arg[0] <= 24 && trail == '~')
+	key = parse_csi_f_keys(arg[0]);
+
+    return put_key_modifiers_in_typebuf(key, modifiers, csi_len, offset, buf,
+	    bufsize, buflen);
 }
 
 /*
  * Handle a sequence with key without a modifier:
  *	{lead}{key}u
+ *	{lead}{key}~
  * Returns the difference in length.
  */
     static int
@@ -5361,7 +5459,8 @@ handle_key_without_modifier(
 	int	offset,
 	char_u	*buf,
 	int	bufsize,
-	int	*buflen)
+	int	*buflen,
+	int	trail)
 {
     char_u  string[MAX_KEY_CODE_LEN + 1];
     int	    new_slen;
@@ -5373,6 +5472,14 @@ handle_key_without_modifier(
 	string[0] = K_SPECIAL;
 	string[1] = KS_EXTRA;
 	string[2] = KE_ESC;
+	new_slen = 3;
+    }
+    else if (arg[0] >= 11 && arg[0] <= 24 && trail == '~')
+    {
+	int key = parse_csi_f_keys(arg[0]);
+	string[0] = K_SPECIAL;
+	string[1] = KEY2TERMCAP0(key);
+	string[2] = KEY2TERMCAP1(key);
 	new_slen = 3;
     }
     else
@@ -5672,27 +5779,117 @@ handle_csi(
     // Key with modifier:
     //	{lead}27;{modifier};{key}~
     //	{lead}{key};{modifier}u
+    //	{lead}{key};{modifier}~
     // Even though we only handle four modifiers and the {modifier} value
     // should be 16 or lower, we accept all modifier values to avoid the raw
     // sequence to be passed through.
     else if ((arg[0] == 27 && argc == 3 && trail == '~')
-		|| (argc == 2 && trail == 'u'))
+		|| (argc == 2 && (trail == 'u' || trail == '~')))
     {
-	return len + handle_key_with_modifier(arg, trail,
-					csi_len, offset, buf, bufsize, buflen);
+	int iskitty = argc == 2 && (trail == 'u' || trail == '~');
+	return len + handle_key_with_modifier(arg, csi_len, offset, buf,
+		bufsize, buflen, iskitty, trail);
     }
 
-    // Key without modifier (Kitty sends this for Esc):
+    // Key without modifier (Kitty sends this for Esc or F3):
     //	{lead}{key}u
-    else if (argc == 1 && trail == 'u')
+    //	{lead}{key}~
+    else if (argc == 1 && (trail == 'u' || trail == '~'))
     {
-	return len + handle_key_without_modifier(arg,
-			    csi_len, offset, buf, bufsize, buflen);
+	return len + handle_key_without_modifier(arg, csi_len, offset, buf,
+		bufsize, buflen, trail);
     }
 
     // else: Unknown CSI sequence.  We could drop it, but then the
     // user can't create a map for it.
     return 0;
+}
+
+static void
+check_for_color_response(char_u *resp, int len)
+{
+    int		i, j;
+    char_u	*argp;
+
+    j = 1 + (resp[0] == ESC);
+    argp = resp + j;
+
+    if (len >= j + 3 && (argp[0] != '1'
+			     || (argp[1] != '1' && argp[1] != '0')
+			     || argp[2] != ';'))
+	i = 0; // no match
+    else
+    {
+	for (i = j; i < len; ++i)
+	    if (resp[i] == '\007' || (resp[0] == OSC ? resp[i] == STERM
+			: (resp[i] == ESC && i + 1 < len && resp[i + 1] == '\\')))
+	    {
+		int is_bg = argp[1] == '1';
+		int is_4digit = i - j >= 21 && resp[j + 11] == '/'
+						  && resp[j + 16] == '/';
+
+		if (i - j >= 15 && STRNCMP(resp + j + 3, "rgb:", 4) == 0
+			    && (is_4digit
+				   || (resp[j + 9] == '/' && resp[j + 12] == '/')))
+		{
+		    char_u *tp_r = resp + j + 7;
+		    char_u *tp_g = resp + j + (is_4digit ? 12 : 10);
+		    char_u *tp_b = resp + j + (is_4digit ? 17 : 13);
+#if defined(FEAT_TERMRESPONSE) && defined(FEAT_TERMINAL)
+		    int rval, gval, bval;
+
+		    rval = hexhex2nr(tp_r);
+		    gval = hexhex2nr(tp_g);
+		    bval = hexhex2nr(tp_b);
+#endif
+		    if (is_bg)
+		    {
+			char *new_bg_val = (3 * '6' < *tp_r + *tp_g +
+					     *tp_b) ? "light" : "dark";
+
+			LOG_TRN("Received RBG response: %s", tp);
+#ifdef FEAT_TERMRESPONSE
+			rbg_status.tr_progress = STATUS_GOT;
+# ifdef FEAT_TERMINAL
+			bg_r = rval;
+			bg_g = gval;
+			bg_b = bval;
+# endif
+#endif
+			if (!option_was_set((char_u *)"bg")
+				      && STRCMP(p_bg, new_bg_val) != 0)
+			{
+			    // value differs, apply it
+			    set_option_value_give_err((char_u *)"bg",
+						  0L, (char_u *)new_bg_val, 0);
+			    reset_option_was_set((char_u *)"bg");
+			    redraw_asap(UPD_CLEAR);
+			}
+		    }
+#if defined(FEAT_TERMRESPONSE) && defined(FEAT_TERMINAL)
+		    else
+		    {
+			LOG_TRN("Received RFG response: %s", tp);
+			rfg_status.tr_progress = STATUS_GOT;
+			fg_r = rval;
+			fg_g = gval;
+			fg_b = bval;
+		    }
+#endif
+		}
+
+#ifdef FEAT_EVAL
+		set_vim_var_string(is_bg ? VV_TERMRBGRESP
+						  : VV_TERMRFGRESP, resp, len);
+#endif
+		apply_autocmds(EVENT_TERMRESPONSEALL,
+			is_bg ? (char_u *)"background" : (char_u *)"foreground",
+			NULL, FALSE, curbuf);
+		break;
+	    }
+    }
+    if (i == len)
+	LOG_TR1("not enough characters for RB");
 }
 
 static oscstate_T osc_state;
@@ -5755,6 +5952,9 @@ handle_osc(char_u *tp, int len, char_u *key_name, int *slen)
 #ifdef FEAT_EVAL
 	    set_vim_var_string_direct(VV_TERMOSC, osc_state.buf.ga_data);
 #endif
+	    // Check for background/foreground colour response
+	    check_for_color_response(osc_state.buf.ga_data, osc_state.buf.ga_len - 1);
+
 	    char_u savebg = *p_bg;
 	    apply_autocmds(EVENT_TERMRESPONSEALL, (char_u *)"osc",
 		    NULL, FALSE, curbuf);
@@ -6536,28 +6736,18 @@ handle_osc:
 }
 
 #if (defined(FEAT_TERMINAL) && defined(FEAT_TERMRESPONSE)) || defined(PROTO)
-
-    static void
-term_get_color(char_u *str, char_u *r, char_u *g, char_u *b)
-{
-    char_u rn[3], gn[3], bn[3];
-
-    if (sscanf((char *)str, "%*[^:]:%2s%*[^/]/%2s%*[^/]/%2s",
-		(char *)&rn, (char *)&gn, (char *)&bn) != 3)
-	return;
-
-    *r = hexhex2nr(rn);
-    *g = hexhex2nr(gn);
-    *b = hexhex2nr(bn);
-}
-
 /*
  * Get the text foreground color, if known.
  */
     void
 term_get_fg_color(char_u *r, char_u *g, char_u *b)
 {
-    term_get_color(get_vim_var_str(VV_TERMRFGRESP), r, g, b);
+    if (rfg_status.tr_progress != STATUS_GOT)
+	return;
+
+    *r = fg_r;
+    *g = fg_g;
+    *b = fg_b;
 }
 
 /*
@@ -6566,7 +6756,12 @@ term_get_fg_color(char_u *r, char_u *g, char_u *b)
     void
 term_get_bg_color(char_u *r, char_u *g, char_u *b)
 {
-    term_get_color(get_vim_var_str(VV_TERMRBGRESP), r, g, b);
+    if (rbg_status.tr_progress != STATUS_GOT)
+	return;
+
+    *r = bg_r;
+    *g = bg_g;
+    *b = bg_b;
 }
 #endif
 

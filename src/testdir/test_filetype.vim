@@ -454,6 +454,7 @@ def s:GetFilenameChecks(): dict<list<string>>
     lite: ['file.lite', 'file.lt'],
     litestep: ['/LiteStep/any/file.rc', 'any/LiteStep/any/file.rc'],
     livebook: ['file.livemd'],
+#    log: ['file.log', 'file_log', 'file.LOG', 'file_LOG'],
     logcheck: ['/etc/logcheck/file.d-some/file', '/etc/logcheck/file.d/file', 'any/etc/logcheck/file.d-some/file', 'any/etc/logcheck/file.d/file'],
     loginaccess: ['/etc/login.access', 'any/etc/login.access'],
     logindefs: ['/etc/login.defs', 'any/etc/login.defs'],
@@ -823,7 +824,8 @@ def s:GetFilenameChecks(): dict<list<string>>
     tal: ['file.tal'],
     taskdata: ['pending.data', 'completed.data', 'undo.data'],
     taskedit: ['file.task'],
-    tcl: ['file.tcl', 'file.tm', 'file.tk', 'file.itcl', 'file.itk', 'file.jacl', '.tclshrc', 'tclsh.rc', '.wishrc', '.tclsh-history', '.xsctcmdhistory', '.xsdbcmdhistory'],
+    tcl: ['file.tcl', 'file.tm', 'file.tk', 'file.itcl', 'file.itk', 'file.jacl', '.tclshrc', 'tclsh.rc', '.wishrc', '.tclsh-history',
+          '.xsctcmdhistory', '.xsdbcmdhistory', 'vivado.jou', 'vivado.log'],
     teal: ['file.tl'],
     templ: ['file.templ'],
     template: ['file.tmpl'],
@@ -1707,6 +1709,7 @@ endfunc
 
 func Test_haredoc_file()
   filetype on
+
   call assert_true(mkdir('foo/bar', 'pR'))
 
   call writefile([], 'README', 'D')
@@ -1714,28 +1717,37 @@ func Test_haredoc_file()
   call assert_notequal('haredoc', &filetype)
   bwipe!
 
+  let g:filetype_haredoc = 3
+  call writefile([], 'foo/bar/bar.ha', 'D')
+  split README
+  call assert_equal('haredoc', &filetype)
+  bwipe!
+
+  let g:filetype_haredoc = 2
+  split README
+  call assert_notequal('haredoc', &filetype)
+  bwipe!
+
+  call writefile([], 'foo/foo.ha', 'D')
+  split README
+  call assert_equal('haredoc', &filetype)
+  bwipe!
+
   let g:filetype_haredoc = 1
   split README
   call assert_notequal('haredoc', &filetype)
   bwipe!
 
-  call writefile([], 'foo/quux.ha')
+  call writefile([], 'main.ha', 'D')
   split README
   call assert_equal('haredoc', &filetype)
   bwipe!
-  call delete('foo/quux.ha')
 
-  call writefile([], 'foo/bar/baz.ha', 'D')
+  let g:filetype_haredoc = 0
   split README
   call assert_notequal('haredoc', &filetype)
   bwipe!
-
-  let g:haredoc_search_depth = 2
-  split README
-  call assert_equal('haredoc', &filetype)
-  bwipe!
   unlet g:filetype_haredoc
-  unlet g:haredoc_search_depth
 
   filetype off
 endfunc
@@ -2689,6 +2701,21 @@ func Test_inc_file()
   bwipe!
 
   call writefile(['RDEPENDS_${PN} += "bar"'], 'Xfile.inc')
+  split Xfile.inc
+  call assert_equal('bitbake', &filetype)
+  bwipe!
+
+  call writefile(['PREFERRED_PROVIDER_virtual/kernel = "linux-yocto"'], 'Xfile.inc')
+  split Xfile.inc
+  call assert_equal('bitbake', &filetype)
+  bwipe!
+
+  call writefile(['MACHINEOVERRIDES =. "qemuall:"'], 'Xfile.inc')
+  split Xfile.inc
+  call assert_equal('bitbake', &filetype)
+  bwipe!
+
+  call writefile(['BBPATH .= ":${LAYERDIR}"'], 'Xfile.inc')
   split Xfile.inc
   call assert_equal('bitbake', &filetype)
   bwipe!
