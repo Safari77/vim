@@ -12,8 +12,9 @@ src/po/big5corr
 src/po/sjiscorr
 src/types.vim
 /.github/
-/src/link.cmd
-/src/po/*.po
+src/link.cmd
+src/po/*.po
+src/tmp_make
 
 # We do need src/auto/configure.
 src/auto/config.cache

@@ -150,7 +150,7 @@ Window	    x11_window = 0;
 Display	    *x11_display = NULL;
 #endif
 
-#if defined(FEAT_SOCKETSERVER) || defined(PROTO)
+#if defined(FEAT_SOCKETSERVER)
 # include <sys/socket.h>
 # include <sys/un.h>
 
@@ -544,7 +544,7 @@ int mch_get_random(char_u *buf, int len)
                written = getrandom(p, len, 0);
        } while ((written == -1) && (errno == EINTR));
        if (written <= 0) {
-	       smsg("mch_get_random: getrandom failed: %s\n",
+               smsg("mch_get_random: getrandom failed: %s\n",
                     strerror(errno));
                exit(1);
        }
@@ -643,7 +643,7 @@ mch_char_avail(void)
     return WaitForChar(0L, NULL, FALSE);
 }
 
-#if defined(FEAT_TERMINAL) || defined(PROTO)
+#if defined(FEAT_TERMINAL)
 /*
  * Check for any pending input or messages.
  */
@@ -654,7 +654,7 @@ mch_check_messages(void)
 }
 #endif
 
-#if defined(HAVE_TOTAL_MEM) || defined(PROTO)
+#if defined(HAVE_TOTAL_MEM)
 # ifdef HAVE_SYS_RESOURCE_H
 #  include <sys/resource.h>
 # endif
@@ -929,7 +929,7 @@ check_stack_growth(char *p)
 }
 #endif
 
-#if defined(HAVE_STACK_LIMIT) || defined(PROTO)
+#if defined(HAVE_STACK_LIMIT)
 static char *stack_limit = NULL;
 
 #if defined(_THREAD_SAFE) && defined(HAVE_PTHREAD_NP_H)
@@ -1161,10 +1161,9 @@ sig_alarm SIGDEFARG(sigarg)
 }
 #endif
 
-#if (defined(HAVE_SETJMP_H) \
+#if defined(HAVE_SETJMP_H) \
 	&& ((defined(FEAT_X11) && defined(FEAT_XCLIPBOARD)) \
-	    || defined(FEAT_LIBCALL))) \
-    || defined(PROTO)
+	    || defined(FEAT_LIBCALL))
 # define USING_SETJMP 1
 
 // argument to SETJMP()
@@ -1677,7 +1676,7 @@ set_signals(void)
 #endif
 }
 
-#if defined(SIGINT) || defined(PROTO)
+#if defined(SIGINT)
 /*
  * Catch CTRL-C (only works while in Cooked mode).
  */
@@ -1858,7 +1857,7 @@ xopen_message(long elapsed_msec)
 # endif
 #endif
 
-#if defined(FEAT_X11) || defined(PROTO)
+#if defined(FEAT_X11)
 /*
  * A few functions shared by X11 title and clipboard code.
  */
@@ -1929,7 +1928,7 @@ x_connect_to_server(void)
     return TRUE;
 }
 
-#if defined(FEAT_X11) && defined(FEAT_XCLIPBOARD) || defined(PROTO)
+#if defined(FEAT_X11) && defined(FEAT_XCLIPBOARD)
 # if defined(USING_SETJMP)
 /*
  * An X IO Error handler, used to catch error while opening the display.
@@ -2613,7 +2612,7 @@ vim_is_xterm(char_u *name)
 		|| STRCMP(name, "builtin_xterm") == 0);
 }
 
-#if defined(FEAT_MOUSE_XTERM) || defined(PROTO)
+#if defined(FEAT_MOUSE_XTERM)
 /*
  * Return TRUE if "name" appears to be that of a terminal
  * known to support the xterm-style mouse protocol.
@@ -2666,7 +2665,7 @@ vim_is_iris(char_u *name)
 	    || STRCMP(name, "builtin_iris-ansi") == 0);
 }
 
-#if defined(VMS) || defined(PROTO)
+#if defined(VMS)
 /*
  * Return TRUE if "name" is a vt300-like terminal name.
  */
@@ -3010,7 +3009,7 @@ mch_isFullName(char_u *fname)
 #endif
 }
 
-#if defined(USE_FNAME_CASE) || defined(PROTO)
+#if defined(USE_FNAME_CASE)
 /*
  * Set the case of the file name, if it already exists.  This will cause the
  * file name to remain exactly the same.
@@ -3118,7 +3117,7 @@ mch_setperm(char_u *name, long perm)
 		    (mode_t)perm) == 0 ? OK : FAIL);
 }
 
-#if defined(HAVE_FCHMOD) || defined(PROTO)
+#if defined(HAVE_FCHMOD)
 /*
  * Set file permission for open file "fd" to "perm".
  * Return FAIL for failure, OK otherwise.
@@ -3130,7 +3129,7 @@ mch_fsetperm(int fd, long perm)
 }
 #endif
 
-#if defined(HAVE_ACL) || defined(PROTO)
+#if defined(HAVE_ACL)
 # ifdef HAVE_SYS_ACL_H
 #  include <sys/acl.h>
 # endif
@@ -3145,7 +3144,7 @@ typedef struct vim_acl_solaris_T {
 } vim_acl_solaris_T;
 # endif
 
-#if defined(HAVE_SELINUX) || defined(PROTO)
+#if defined(HAVE_SELINUX)
 /*
  * Copy security info from "from_file" to "to_file".
  */
@@ -3281,7 +3280,7 @@ mch_copy_sec(char_u *from_file, char_u *to_file)
 }
 #endif // HAVE_SMACK
 
-#if defined(FEAT_XATTR) || defined(PROTO)
+#if defined(FEAT_XATTR)
 /*
  * Copy extended attributes from_file to to_file
  */
@@ -3716,7 +3715,7 @@ mch_early_init(void)
 #endif
 }
 
-#if defined(EXITFREE) || defined(PROTO)
+#if defined(EXITFREE)
     void
 mch_free_mem(void)
 {
@@ -4291,7 +4290,7 @@ mch_setmouse(int on)
 #endif
 }
 
-#if defined(FEAT_BEVAL_TERM) || defined(PROTO)
+#if defined(FEAT_BEVAL_TERM)
 /*
  * Called when 'balloonevalterm' changed.
  */
@@ -4590,7 +4589,7 @@ mch_calc_cell_size(struct cellsize *cs_out)
 #endif
 }
 
-#if defined(FEAT_TERMINAL) || defined(PROTO)
+#if defined(FEAT_TERMINAL)
 /*
  * Report the windows size "rows" and "cols" to tty "fd".
  */
@@ -4862,7 +4861,7 @@ may_send_sigint(int c UNUSED, pid_t pid UNUSED, pid_t wpid UNUSED)
 # endif
 }
 
-#if !defined(USE_SYSTEM) || defined(FEAT_TERMINAL) || defined(PROTO)
+#if !defined(USE_SYSTEM) || defined(FEAT_TERMINAL)
 
 /*
  * Parse "cmd" and return the result in "argvp" which is an allocated array of
@@ -5957,7 +5956,7 @@ mch_call_shell(
 #endif
 }
 
-#if defined(FEAT_JOB_CHANNEL) || defined(PROTO)
+#if defined(FEAT_JOB_CHANNEL)
     void
 mch_job_start(char **argv, job_T *job, jobopt_T *options, int is_terminal)
 {
@@ -6481,7 +6480,7 @@ mch_clear_job(job_T *job)
 }
 #endif
 
-#if defined(FEAT_TERMINAL) || defined(PROTO)
+#if defined(FEAT_TERMINAL)
     int
 mch_create_pty_channel(job_T *job, jobopt_T *options)
 {
@@ -7767,7 +7766,7 @@ have_dollars(int num, char_u **file)
     return FALSE;
 }
 
-#if !defined(HAVE_RENAME) || defined(PROTO)
+#if !defined(HAVE_RENAME)
 /*
  * Scaled-down version of rename(), which is missing in Xenix.
  * This version can only move regular files and will fail if the
@@ -7788,8 +7787,8 @@ mch_rename(const char *src, const char *dest)
 }
 #endif // !HAVE_RENAME
 
-#if defined(FEAT_MOUSE_GPM) || defined(PROTO)
-# if defined(DYNAMIC_GPM) || defined(PROTO)
+#if defined(FEAT_MOUSE_GPM)
+# if defined(DYNAMIC_GPM)
 /*
  * Initialize Gpm's symbols for dynamic linking.
  * Must be called only if libgpm_hinst is NULL.
@@ -8093,7 +8092,7 @@ sig_sysmouse SIGDEFARG(sigarg)
 }
 #endif // FEAT_SYSMOUSE
 
-#if defined(FEAT_LIBCALL) || defined(PROTO)
+#if defined(FEAT_LIBCALL)
 typedef char_u * (*STRPROCSTR)(char_u *);
 typedef char_u * (*INTPROCSTR)(int);
 typedef int (*STRPROCINT)(char_u *);
@@ -8263,7 +8262,7 @@ mch_libcall(
 }
 #endif
 
-#if (defined(FEAT_X11) && defined(FEAT_XCLIPBOARD)) || defined(PROTO)
+#if defined(FEAT_X11) && defined(FEAT_XCLIPBOARD)
 static int	xterm_trace = -1;	// default: disabled
 static int	xterm_button;
 
@@ -8487,7 +8486,7 @@ do_xterm_trace(void)
     return TRUE;
 }
 
-# if defined(FEAT_GUI) || defined(FEAT_XCLIPBOARD) || defined(PROTO)
+# if defined(FEAT_GUI) || defined(FEAT_XCLIPBOARD)
 /*
  * Destroy the display, window and app_context.  Required for GTK.
  */
@@ -8606,7 +8605,7 @@ clip_xterm_set_selection(Clipboard_T *cbd)
 #endif
 
 
-#if defined(USE_XSMP) || defined(PROTO)
+#if defined(USE_XSMP)
 /*
  * Code for X Session Management Protocol.
  */
@@ -8864,8 +8863,8 @@ xsmp_close(void)
 }
 #endif // USE_XSMP
 
-#if defined(FEAT_RELTIME) || defined(PROTO)
-# if defined(PROF_NSEC) || defined(PROTO)
+#if defined(FEAT_RELTIME)
+# if defined(PROF_NSEC)
 /*
  * Implement timeout with timer_create() and timer_settime().
  */
@@ -9134,7 +9133,7 @@ mch_create_anon_file(void)
     return fd;
 }
 
-#if defined(FEAT_SOCKETSERVER) || defined(PROTO)
+#if defined(FEAT_SOCKETSERVER)
 
 /*
  * Initialize socket server called "name" (the socket filename). If "name" is a
