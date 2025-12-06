@@ -638,20 +638,7 @@ new_file_message(void)
     return shortmess(SHM_NEW) ? _("[New]") : _("[New File]");
 }
 
-/*
- * make test filename for testing can directory be written
- */
-static char_u *make_testfn(char_u *fn) {
-    char_u *fnpath;
-    char_u fnfile [MAXPATHL+1];
-
-    vim_strncpy(fnfile, fn, sizeof(fnfile)-1);
-    *gettail(fnfile) = NUL;
-    fnpath = alloc(MAXPATHL+1);
-    if (fnpath == NULL) return NULL;
-    vim_snprintf(fnpath, MAXPATHL, "%s%s", fnfile, "vimfiletest.XXXXXX");
-    return fnpath;
-}
+// This is the biggest piece of crap function ever seen.
 
 /*
  * buf_write() - write to file "fname" lines "start" through "end"
@@ -733,6 +720,7 @@ buf_write(
     char_u	    *fenc_tofree = NULL; // allocated "fenc"
     int		    wb_flags = 0;
     int		    use_rename_exchange = FALSE;
+    int		    tmp_write_fd = -1; // fd for wftmp
 #ifdef HAVE_ACL
     vim_acl_T	    acl = NULL;		// ACL copied from original file to
 					// backup or new file
@@ -1089,16 +1077,13 @@ buf_write(
     st_old.st_ino = 0;
     perm = -1;
     if (mch_stat((char *)fname, &st_old) < 0) {
-        int tmp_fd;
-
 	newfile = TRUE;
-        tmp_fname = make_testfn(fname);
-        if ((tmp_fd = mkstemp(tmp_fname)) != -1) {
-		can_write_dir = 1;
-                close(tmp_fd);
-		mch_remove(tmp_fname);
-                vim_free(tmp_fname);
-        }
+	STRCPY(wftmp, fname);
+	vim_snprintf(wftmp, sizeof(wftmp), "%s.tmp.XXXXXX", fname);
+	if ((tmp_write_fd = mkstemp((char *)wftmp)) >= 0)
+	{
+	    can_write_dir = 1;
+	}
     } else {
 	perm = st_old.st_mode;
 	if (!S_ISREG(st_old.st_mode))		// not a file
@@ -1121,20 +1106,21 @@ buf_write(
 	    newfile = TRUE;
 	    perm = -1;
 	}
-       /*
-        * Check if we can create a file and set the owner/group to
-        * the ones from the original file.
-        * First find a file name that doesn't exist yet.
-        */
-        tmp_fname = make_testfn(fname);
-	fd = mkstemp(tmp_fname);
-	if (fd != -1) {
+	/*
+	 * Check if we can create a file and set the owner/group to
+	 * the ones from the original file.
+	 * First find a file name that doesn't exist yet.
+	 */
+	STRCPY(wftmp, fname);
+	vim_snprintf(wftmp, sizeof(wftmp), "%s.tmp.XXXXXX", fname);
+	if ((tmp_write_fd = mkstemp((char *)wftmp)) >= 0)
+	{
 #ifdef UNIX
 # ifdef HAVE_FCHOWN
-	    fchown(fd, st_old.st_uid, st_old.st_gid);
-	    fchmod(fd, perm);
+	    fchown(tmp_write_fd, st_old.st_uid, st_old.st_gid);
+	    fchmod(tmp_write_fd, perm);
 # endif
-	    if (mch_stat((char *)tmp_fname, &st) == 0
+	    if (mch_stat((char *)wftmp, &st) == 0
 		&& st.st_uid == st_old.st_uid
 		&& st.st_gid == st_old.st_gid
 		&& st.st_mode == perm)
@@ -1142,11 +1128,11 @@ buf_write(
 # else
 	    can_write_dir = 1;
 # endif
-	    /* Close the file before removing it, on MS-Windows we
-	     * can't delete an open file. */
-	    close(fd);
-	    mch_remove(tmp_fname);
-	    vim_free(tmp_fname);
+	    if (can_write_dir == 0) {
+		close(tmp_write_fd);
+		mch_remove(wftmp);
+		tmp_write_fd = -1;
+	    }
 	}
     }
 #else // !UNIX
@@ -1481,7 +1467,7 @@ buf_write(
 			// others.
 			if (st_new.st_gid != st_old.st_gid
 # ifdef HAVE_FCHOWN  // sequent-ptx lacks fchown()
-				&& fchown(bfd, (uid_t)-1, st_old.st_gid) != 0
+			    && fchown(bfd, (uid_t)-1, st_old.st_gid) != 0
 # endif
 						)
 			    mch_setperm(backupfn,
@@ -1837,16 +1823,22 @@ buf_write(
 	}
 	else
 	{
-	if ((wfname == fname) && can_write_dir && !append) {
-	    vim_snprintf(wftmp, sizeof(wftmp), "%s.tmp.XXXXXX", wfname);
-	    fd = mkstemp(wftmp);
-	    if (fd == -1) {
-		errmsg = (char_u *)_("E212: Can't open file for writing");
+	    if (tmp_write_fd >= 0 && (wfname == fname) && !append) {
+		// Use the file we opened earlier
+		fd = tmp_write_fd;
+		wfname_orig = wfname;
+		wfname = wftmp;
+	    } else {
+		// We have an open temp file but aren't using it (e.g. append mode or backup_copy forced overwrite)
+		if (tmp_write_fd >= 0) {
+		    close(tmp_write_fd);
+		    mch_remove(wftmp);
+		    tmp_write_fd = -1;
+		}
+
+		if (backup_linked)
+		    mch_remove(fname);
 	    }
-	    wfname_orig = wfname;
-	    wfname = wftmp;
-	} else {
-	    if (backup_linked) mch_remove(fname);
 
 #ifdef HAVE_FTRUNCATE
 # define TRUNC_ON_OPEN 0
@@ -1944,7 +1936,6 @@ restore_backup:
 		    wfname = NULL;
 		}
 		goto fail;
-	    }
 	    }
 	    write_info.bw_fd = fd;
 
