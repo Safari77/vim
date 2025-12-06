@@ -1,7 +1,7 @@
 " These commands create the option window.
 "
 " Maintainer:	The Vim Project <https://github.com/vim/vim>
-" Last Change:	2025 Nov 20
+" Last Change:	2025 Nov 27
 " Former Maintainer:	Bram Moolenaar <Bram@vim.org>
 
 " If there already is an option window, jump to that one.
@@ -890,8 +890,6 @@ if has("insert_expand")
   call <SID>OptionL("cot")
   call <SID>AddOption("completeitemalign", gettext(" \npopup menu item align order"))
   call <SID>OptionG("cia", &cia)
-  call <SID>AddOption("completefuzzycollect", gettext(" \nuse fuzzy collection for specific completion modes"))
-  call <SID>OptionL("cfc")
   if exists("+completepopup")
     call <SID>AddOption("completepopup", gettext("options for the Insert mode completion info popup"))
     call <SID>OptionG("cpp", &cpp)
@@ -1287,8 +1285,6 @@ call <SID>AddOption("isfname", gettext("specifies the characters in a file name"
 call <SID>OptionG("isf", &isf)
 call <SID>AddOption("isident", gettext("specifies the characters in an identifier"))
 call <SID>OptionG("isi", &isi)
-call <SID>AddOption("isexpand", gettext("defines trigger strings for complete_match()"))
-call append("$", "\t" .. s:local_to_buffer)
 call <SID>AddOption("iskeyword", gettext("specifies the characters in a keyword"))
 call append("$", "\t" .. s:local_to_buffer)
 call <SID>OptionL("isk")
