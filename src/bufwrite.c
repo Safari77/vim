@@ -17,6 +17,10 @@
 # include <utime.h>		// for struct utimbuf
 #endif
 
+#ifndef _GNU_SOURCE
+#  define _GNU_SOURCE
+#endif
+
 /*
  * Structure to pass arguments from buf_write() to buf_write_bytes().
  */
@@ -42,6 +46,35 @@ struct bw_info
     iconv_t	bw_iconv_fd;	// descriptor for iconv() or -1
 #endif
 };
+
+/*
+ * rename() with flags.
+ * Wraps renameat2() on Linux to support RENAME_EXCHANGE and RENAME_NOREPLACE.
+ * Falls back to mch_rename() if flags are 0 or syscall fails/unsupported.
+ */
+int
+vim_rename2(char_u *from, char_u *to, unsigned int flags)
+{
+#if defined(__linux__) && defined(RENAME_EXCHANGE)
+    // Use renameat2 to support atomic exchange or noreplace
+    if (renameat2(AT_FDCWD, from, AT_FDCWD, to, flags) == 0)
+	return 0;
+
+    // If standard rename is requested, or renameat2 is not supported (ENOSYS)
+    // or flags are invalid, fall through to fallback.
+    // Note: If flags != 0 and renameat2 fails, we should NOT fallback to
+    // mch_rename (which ignores flags), unless the error suggests the syscall
+    // is missing entirely.
+    if (flags != 0 && errno != ENOSYS)
+	return -1;
+#elif defined(__linux__)
+#  warning renameat2 not supported
+#endif
+
+    if (flags != 0)
+	return -1; // Flags requested but not supported
+    return mch_rename((char *)from, (char *)to);
+}
 
 /*
  * Convert a Unicode character to bytes.
@@ -699,6 +732,7 @@ buf_write(
     char_u	    *fenc;		// effective 'fileencoding'
     char_u	    *fenc_tofree = NULL; // allocated "fenc"
     int		    wb_flags = 0;
+    int		    use_rename_exchange = FALSE;
 #ifdef HAVE_ACL
     vim_acl_T	    acl = NULL;		// ACL copied from original file to
 					// backup or new file
@@ -1592,6 +1626,13 @@ buf_write(
 			    VIM_CLEAR(backup);
 		    }
 		}
+		// If we can use RENAME_EXCHANGE, skip the immediate rename/copy.
+		// We will perform the exchange atomically later.
+		if (backup != NULL && can_write_dir && !append && !filtering) {
+		    use_rename_exchange = TRUE;
+		    break;
+		}
+
 		if (backup != NULL)
 		{
 		    // Delete any existing backup and move the current version
@@ -2310,8 +2351,35 @@ restore_backup:
 #endif
     }
 
-    if (wfname_orig && (mch_rename(wftmp, wfname_orig) == -1))
-	    end = 0;
+    if (wfname_orig) {
+	int exchanged = FALSE;
+	if (use_rename_exchange) {
+	    // Try atomic exchange: wftmp (new) <-> wfname_orig (old)
+	    if (vim_rename2(wftmp, wfname_orig, RENAME_EXCHANGE) == 0) {
+		exchanged = TRUE;
+		// wftmp now contains the old content (backup). Move it to backup path.
+		if (backup != NULL) {
+		    vim_rename(wftmp, backup);
+		} else {
+		    mch_remove(wftmp);
+		}
+	    }
+	}
+
+	if (!exchanged) {
+	    // Fallback: If we planned to exchange but failed, ensure we create the backup now
+	    // before overwriting the original.
+	    if (use_rename_exchange && backup != NULL) {
+		if (vim_copyfile(wfname_orig, backup) != OK) {
+		    end = 0; // Backup failed, unsafe to overwrite
+		}
+	    }
+
+	    if (end != 0 && mch_rename(wftmp, wfname_orig) == -1) {
+		end = 0;
+	    }
+	}
+    }
 
     if (end == 0)
     {
