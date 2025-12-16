@@ -1287,6 +1287,11 @@ wait_return(int redraw)
 	c = CAR;		// no need for a return in ex mode
 	got_int = FALSE;
     }
+    else if (!stuff_empty())
+	// When there are stuffed characters, the next stuffed character will
+	// dismiss the hit-enter prompt immediately and have to be put back, so
+	// instead just don't show the hit-enter prompt at all.
+	c = CAR;
     else
     {
 	// Make sure the hit-return prompt is on screen when 'guioptions' was
@@ -1414,7 +1419,8 @@ wait_return(int redraw)
 	    if (c == K_LEFTMOUSE || c == K_MIDDLEMOUSE || c == K_RIGHTMOUSE
 					|| c == K_X1MOUSE || c == K_X2MOUSE)
 		(void)jump_to_mouse(MOUSE_SETPOS, NULL, 0);
-	    else if (vim_strchr((char_u *)"\r\n ", c) == NULL && c != Ctrl_C)
+	    else if (vim_strchr((char_u *)"\r\n ", c) == NULL && c != Ctrl_C
+		    && c != 'q')
 	    {
 		// Put the character back in the typeahead buffer.  Don't use
 		// the stuff buffer, because lmaps wouldn't work.
