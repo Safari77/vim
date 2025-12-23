@@ -179,7 +179,10 @@ add_member(
     m->ocm_name.length = (size_t)(varname_end - varname);
     m->ocm_name.string = vim_strnsave(varname, m->ocm_name.length);
     if (m->ocm_name.string == NULL)
+    {
 	m->ocm_name.length = 0;
+	return FAIL;
+    }
     m->ocm_access = has_public ? VIM_ACCESS_ALL
 		      : *varname == '_' ? VIM_ACCESS_PRIVATE : VIM_ACCESS_READ;
     if (has_final)
@@ -230,7 +233,10 @@ add_members_to_class(
 	*m = parent_members[i];
 	m->ocm_name.string = vim_strnsave(m->ocm_name.string, m->ocm_name.length);
 	if (m->ocm_name.string == NULL)
+	{
 	    m->ocm_name.length = 0;
+	    return FAIL;
+	}
 	if (m->ocm_init != NULL)
 	    m->ocm_init = vim_strsave(m->ocm_init);
     }
@@ -2700,7 +2706,10 @@ early_ret:
 	// Allocate a typval for each class member and initialize it.
 	if ((is_class || is_enum) && cl->class_class_member_count > 0)
 	    if (add_class_members(cl, eap, &type_list) == FAIL)
-		goto cleanup;
+	    {
+		cl->class_type_list = type_list;
+		return;
+	    }
 
 	cl->class_type_list = type_list;
 
