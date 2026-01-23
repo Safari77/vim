@@ -231,6 +231,99 @@ def Test_expr1_falsy()
   END
   v9.CheckDefAndScriptSuccess(lines)
 
+  # falsy operator with objects and enum values
+  lines =<< trim END
+    vim9script
+    class C
+    endclass
+
+    var c = C.new()
+    assert_equal(c, c ?? 'falsy')
+    assert_equal('truthy', !c ?? 'truthy')
+    assert_equal('falsy', null_object ?? 'falsy')
+    assert_equal(true, !null_object ?? 'truthy')
+
+    enum Color
+      Red,
+      Blue
+    endenum
+    assert_equal(Color.Red, Color.Red ?? 'falsy')
+    assert_equal('truthy', !Color.Red ?? 'truthy')
+
+    def Fn()
+      var c2 = C.new()
+      assert_equal(c2, c2 ?? 'falsy')
+      assert_equal('truthy', !c2 ?? 'truthy')
+      assert_equal('falsy', null_object ?? 'falsy')
+      assert_equal(true, !null_object ?? 'truthy')
+      assert_equal(Color.Red, Color.Red ?? 'falsy')
+      assert_equal('truthy', !Color.Red ?? 'truthy')
+    enddef
+    Fn()
+  END
+  v9.CheckSourceScriptSuccess(lines)
+
+  # class cannot be used with the falsy operator
+  lines =<< trim END
+    vim9script
+    class A
+    endclass
+    echo A ?? 'falsy'
+  END
+  v9.CheckSourceScriptFailure(lines, 'E1405: Class "A" cannot be used as a value')
+
+  lines =<< trim END
+    vim9script
+    class B
+    endclass
+    echo !B
+  END
+  v9.CheckSourceScriptFailure(lines, 'E1405: Class "B" cannot be used as a value')
+
+  lines =<< trim END
+    vim9script
+    echo null_class ?? 'falsy'
+  END
+  v9.CheckSourceScriptFailure(lines, 'E1405: Class "" cannot be used as a value')
+
+  lines =<< trim END
+    vim9script
+    echo !null_class
+  END
+  v9.CheckSourceScriptFailure(lines, 'E1405: Class "" cannot be used as a value')
+
+  # enum cannot be used with the falsy operator
+  lines =<< trim END
+    vim9script
+    enum E1
+    endenum
+    echo E1 ?? 'falsy'
+  END
+  v9.CheckSourceScriptFailure(lines, 'E1421: Enum "E1" cannot be used as a value')
+
+  lines =<< trim END
+    vim9script
+    enum E2
+    endenum
+    echo !E2
+  END
+  v9.CheckSourceScriptFailure(lines, 'E1421: Enum "E2" cannot be used as a value')
+
+  # typealias cannot be used with the falsy operator
+  lines =<< trim END
+    vim9script
+    type T1 = list<bool>
+    echo T1 ?? 'falsy'
+  END
+  v9.CheckSourceScriptFailure(lines, 'E1403: Type alias "T1" cannot be used as a value')
+
+  lines =<< trim END
+    vim9script
+    type T2 = list<bool>
+    echo !T2
+  END
+  v9.CheckSourceScriptFailure(lines, 'E1403: Type alias "T2" cannot be used as a value')
+
   var msg = "White space required before and after '??'"
   call v9.CheckDefAndScriptFailure(["var x = 1?? 'one' : 'two'"], msg, 1)
   call v9.CheckDefAndScriptFailure(["var x = 1 ??'one' : 'two'"], msg, 1)
