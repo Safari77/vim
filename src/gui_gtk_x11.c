@@ -2097,8 +2097,7 @@ scroll_event(GtkWidget *widget,
     vim_modifiers = modifiers_gdk2mouse(event->state);
 
 #if GTK_CHECK_VERSION(3,4,0)
-    // on x11, despite not requested, when we copy into primary clipboard,
-    // we'll get smooth events. Unsmooth ones will also come along.
+# ifdef GDK_WINDOWING_WAYLAND
     if (event->direction == GDK_SCROLL_SMOOTH && gui.is_wayland)
     {
 	while (acc_x >= 1.0)
@@ -2126,7 +2125,11 @@ scroll_event(GtkWidget *widget,
 		    FALSE, vim_modifiers);
 	}
     }
-    else if (event->direction == GDK_SCROLL_SMOOTH && X_DISPLAY)
+    else
+# endif
+    // on x11, despite not requested, when we copy into primary clipboard,
+    // we'll get smooth events. Unsmooth ones will also come along.
+    if (event->direction == GDK_SCROLL_SMOOTH && X_DISPLAY)
 	// for X11 we deal with unsmooth events, and so ignore the smooth ones
 	;
     else
@@ -6725,14 +6728,7 @@ gui_mch_wait_for_chars(long wtime)
 	 * situations, sort of race condition).
 	 */
 	if (!input_available())
-	{
-#ifdef GDK_WINDOWING_WAYLAND
-	    if (gui.is_wayland)
-		g_main_context_iteration(NULL, FALSE);
-	    else
-#endif
-		g_main_context_iteration(NULL, TRUE);
-	}
+	    g_main_context_iteration(NULL, TRUE);
 
 	// Got char, return immediately
 	if (input_available())
@@ -6947,7 +6943,7 @@ gui_gtk_surface_copy_rect(int dest_x, int dest_y,
 		    dest_y - src_y);
 	    cairo_rectangle(cr, dest_x, dest_y, width, height);
 	    cairo_clip(cr);
-	    cairo_paint(cr);;
+	    cairo_paint(cr);
 	}
 	else
 	{

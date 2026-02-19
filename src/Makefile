@@ -1607,7 +1607,10 @@ EXTRA_SRC = if_lua.c if_mzsch.c auto/if_perl.c \
 	    gui_beval.c netbeans.c job.c channel.c \
 	    $(GRESOURCE_SRC)
 
-$(WAYLAND_SRC):
+$(WAYLAND_SRC): genwaylandproto
+
+.PHONY: genwaylandproto
+genwaylandproto:
 	cd auto/wayland; $(MAKE)
 
 # Needed for parallel jobs to work
@@ -2397,6 +2400,9 @@ installrtbase: $(HELPSOURCE)/vim.1 $(DEST_VIM) $(VIMTARGET) $(DEST_RT) \
 	chmod $(VIMSCRIPTMOD) $(DEST_SCRIPT)/vimrc_example.vim
 	$(INSTALL_DATA) $(SCRIPTSOURCE)/gvimrc_example.vim $(DEST_SCRIPT)
 	chmod $(VIMSCRIPTMOD) $(DEST_SCRIPT)/gvimrc_example.vim
+# install the xdg file
+	$(INSTALL_DATA) $(SCRIPTSOURCE)/xdg.vim $(DEST_SCRIPT)
+	chmod $(VIMSCRIPTMOD) $(DEST_SCRIPT)/xdg.vim
 # install the file type detection files
 	$(INSTALL_DATA) $(SCRIPTSOURCE)/filetype.vim $(SYS_FILETYPE_FILE)
 	chmod $(VIMSCRIPTMOD) $(SYS_FILETYPE_FILE)
