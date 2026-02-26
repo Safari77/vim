@@ -4132,15 +4132,27 @@ eval_addblob(typval_T *tv1, typval_T *tv2)
     blob_T  *b1 = tv1->vval.v_blob;
     blob_T  *b2 = tv2->vval.v_blob;
     blob_T  *b = blob_alloc();
-    int	    i;
+    long    len1, len2;
+    long    totallen;
 
     if (b == NULL)
 	return;
 
-    for (i = 0; i < blob_len(b1); i++)
-	ga_append(&b->bv_ga, blob_get(b1, i));
-    for (i = 0; i < blob_len(b2); i++)
-	ga_append(&b->bv_ga, blob_get(b2, i));
+    len1 = blob_len(b1);
+    len2 = blob_len(b2);
+    totallen = len1 + len2;
+
+    if (totallen > 0 && totallen <= INT_MAX
+				    && ga_grow(&b->bv_ga, (int)totallen) == OK)
+    {
+	if (len1 > 0)
+	    mch_memmove((char_u *)b->bv_ga.ga_data,
+		    (char_u *)b1->bv_ga.ga_data, (size_t)len1);
+	if (len2 > 0)
+	    mch_memmove((char_u *)b->bv_ga.ga_data + len1,
+		    (char_u *)b2->bv_ga.ga_data, (size_t)len2);
+	b->bv_ga.ga_len = (int)totallen;
+    }
 
     clear_tv(tv1);
     rettv_blob_set(tv1, b);
@@ -6296,14 +6308,14 @@ partial_tv2string(
     fname = string_quote(pt == NULL ? NULL : partial_name(pt), FALSE);
 
     ga_init2(&ga, 1, 100);
-    ga_concat_len(&ga, (char_u *)"function(", 9);
+    GA_CONCAT_LITERAL(&ga, "function(");
     if (fname != NULL)
     {
 	// When using uf_name prepend "g:" for a global function.
 	if (pt != NULL && pt->pt_name == NULL && fname[0] == '\''
 						&& vim_isupper(fname[1]))
 	{
-	    ga_concat_len(&ga, (char_u *)"'g:", 3);
+	    GA_CONCAT_LITERAL(&ga, "'g:");
 	    ga_concat(&ga, fname + 1);
 	}
 	else
@@ -6312,28 +6324,29 @@ partial_tv2string(
     }
     if (pt != NULL && pt->pt_argc > 0)
     {
-	ga_concat_len(&ga, (char_u *)", [", 3);
+	GA_CONCAT_LITERAL(&ga, ", [");
 	for (i = 0; i < pt->pt_argc; ++i)
 	{
 	    if (i > 0)
-		ga_concat_len(&ga, (char_u *)", ", 2);
+		GA_CONCAT_LITERAL(&ga, ", ");
 	    ga_concat(&ga, tv2string(&pt->pt_argv[i], &tf, numbuf, copyID));
 	    vim_free(tf);
 	}
-	ga_concat_len(&ga, (char_u *)"]", 1);
+	GA_CONCAT_LITERAL(&ga, "]");
     }
     if (pt != NULL && pt->pt_dict != NULL)
     {
 	typval_T dtv;
 
-	ga_concat_len(&ga, (char_u *)", ", 2);
+	GA_CONCAT_LITERAL(&ga, ", ");
 	dtv.v_type = VAR_DICT;
 	dtv.vval.v_dict = pt->pt_dict;
 	ga_concat(&ga, tv2string(&dtv, &tf, numbuf, copyID));
 	vim_free(tf);
     }
     // terminate with ')' and a NUL
-    ga_concat_len(&ga, (char_u *)")", 2);
+    GA_CONCAT_LITERAL(&ga, ")");
+    ga_append(&ga, NUL);
 
     *tofree = ga.ga_data;
     r = *tofree;

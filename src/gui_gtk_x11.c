@@ -1720,6 +1720,13 @@ gui_mch_init_check(void)
     }
 #endif
 
+#if GTK_CHECK_VERSION(3,10,0) && !defined(HAVE_WAYLAND)
+    // Without Wayland display protocol support compiled in, force the X11 GDK
+    // backend to avoid display issues when running under a Wayland compositor
+    // (e.g., cmdline bottom half hidden in tiny builds, see patch 9.1.1585).
+    gdk_set_allowed_backends("x11");
+#endif
+
 #ifdef FEAT_GUI_GNOME
     if (gtk_socket_id == 0)
 	using_gnome = 1;
@@ -4006,7 +4013,7 @@ gui_mch_init(void)
 #ifdef GDK_WINDOWING_WAYLAND
     GdkDisplay *d = gdk_display_get_default();
     if (GDK_IS_WAYLAND_DISPLAY(d))
-	gui.is_wayland = TRUE;
+	gui.is_wayland = true;
 #endif
 
     // Determine which events we will filter.
@@ -6624,11 +6631,6 @@ gui_mch_draw_part_cursor(int w, int h, guicolor_T color)
     void
 gui_mch_update(void)
 {
-#ifdef GDK_WINDOWING_WAYLAND
-    // avoid early redraws; compositor does redraw
-    if (gui.is_wayland)
-       return;
-#endif
     int cnt = 0;	// prevent endless loop
     while (g_main_context_pending(NULL) && !vim_is_input_buf_full()
 								&& ++cnt < 100)
