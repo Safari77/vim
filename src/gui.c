@@ -148,8 +148,11 @@ gui_start(char_u *arg UNUSED)
     }
 #ifdef HAVE_CLIPMETHOD
     else
+    {
 	// Reset clipmethod to CLIPMETHOD_NONE
 	choose_clipmethod();
+	term_set_sync_output(TERM_SYNC_OUTPUT_OFF);
+    }
 #endif
 
 #if defined(FEAT_SOCKETSERVER) && defined(FEAT_GUI_GTK)
@@ -221,7 +224,7 @@ gui_attempt_start(void)
 #ifdef GUI_MAY_FORK
 
 // for waitpid()
-# if defined(HAVE_SYS_WAIT_H) || defined(HAVE_UNION_WAIT)
+# if defined(HAVE_SYS_WAIT_H)
 #  include <sys/wait.h>
 # endif
 
@@ -277,11 +280,7 @@ gui_do_fork(void)
 		// The child failed to start the GUI, so the caller must
 		// continue. There may be more error information written
 		// to stderr by the child.
-# ifdef __NeXT__
-		wait4(pid, &exit_status, 0, (struct rusage *)0);
-# else
 		waitpid(pid, &exit_status, 0);
-# endif
 		emsg(_(e_the_child_process_failed_to_start_GUI));
 		return;
 	    }
