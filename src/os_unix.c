@@ -9776,6 +9776,7 @@ socket_server_send_reply(char_u *client, char_u *str)
 	    socket_server_write(socket_fd, final, sz, 1000) == FAIL)
     {
 	socket_server_free_cmd(&cmd);
+	vim_free(final);
 	close(socket_fd);
 	return FAIL;
     }
