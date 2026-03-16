@@ -1218,8 +1218,9 @@ convert_string(string_T *str, char_u *from, char_u *to, string_T *ret)
     }
     else
     {
-	ret->length = str->length;
-	ret->string = string_convert(&vimconv, str->string, (int *)&ret->length);
+	int len = str->length;
+	ret->string = string_convert(&vimconv, str->string, &len);
+	ret->length = len;
     }
     convert_setup(&vimconv, NULL, NULL);
 
@@ -1232,13 +1233,20 @@ convert_string(string_T *str, char_u *from, char_u *to, string_T *ret)
     static void
 blob_from_string(char_u *str, blob_T *blob)
 {
-    char_u  *p;
+    int	    len = (int)STRLEN(str);
+    char_u  *dest;
 
-    for (p = str; *p != NUL; ++p)
-    {
-	// Translate newlines in the string to NUL character
-	ga_append(&blob->bv_ga, (*p == NL) ? NUL : (int)*p);
-    }
+    if (len == 0)
+	return;
+    if (ga_grow(&blob->bv_ga, len) == FAIL)
+	return;
+    dest = (char_u *)blob->bv_ga.ga_data + blob->bv_ga.ga_len;
+    mch_memmove(dest, str, (size_t)len);
+    // Translate newlines in the string to NUL characters
+    for (int i = 0; i < len; ++i)
+	if (dest[i] == NL)
+	    dest[i] = NUL;
+    blob->bv_ga.ga_len += len;
 }
 
 /*
@@ -1498,9 +1506,10 @@ f_blob2str(typval_T *argvars, typval_T *rettv)
 	// Use string_convert_ext with explicit input length
 	string_T    converted;
 
-	converted.length = blen;
+	int len = blen;
 	converted.string =
-	    string_convert_ext(&vimconv, (char_u *)blob_ga.ga_data, (int *)&converted.length, NULL);
+	    string_convert_ext(&vimconv, (char_u *)blob_ga.ga_data, &len, NULL);
+	converted.length = len;
 	convert_setup(&vimconv, NULL, NULL);
 	ga_clear(&blob_ga);
 	append_converted_string_to_list(&converted, validate_utf8, rettv->vval.v_list, from_encoding);

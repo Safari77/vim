@@ -223,6 +223,7 @@
 #endif
 #ifdef FEAT_STL_OPT
 # define PV_STL		OPT_BOTH(OPT_WIN(WV_STL))
+# define PV_STLO	OPT_BOTH(OPT_WIN(WV_STLO))
 #endif
 #define PV_UL		OPT_BOTH(OPT_BUF(BV_UL))
 #define PV_WFB		OPT_WIN(WV_WFB)
@@ -2522,7 +2523,7 @@ static struct vimoption options[] =
     {"statuslineopt"  ,"stlo",  P_STRING|P_VI_DEF|P_ALLOCED|P_RSTAT|P_MLE
 			    |P_ONECOMMA|P_COLON|P_NODUP,
 #ifdef FEAT_STL_OPT
-			    (char_u *)&p_stlo, PV_NONE, did_set_statuslineopt, expand_set_statuslineopt,
+			    (char_u *)&p_stlo, PV_STLO, did_set_statuslineopt, expand_set_statuslineopt,
 #else
 			    (char_u *)NULL, PV_NONE, NULL, NULL,
 #endif
@@ -2659,6 +2660,15 @@ static struct vimoption options[] =
 #else
 			    (char_u*)NULL, PV_NONE, NULL, NULL,
 			    {(char_u *)FALSE, (char_u *)FALSE}
+#endif
+			    SCTX_INIT},
+    {"termresize", "trz", P_STRING|P_VI_DEF,
+#ifdef UNIX
+			    (char_u *)&p_trz, PV_NONE, did_set_termresize, expand_set_termresize,
+			    {(char_u *)"", (char_u *)0}
+#else
+			    (char_u *)NULL, PV_NONE, NULL, NULL,
+			    {(char_u *)NULL, (char_u *)0L}
 #endif
 			    SCTX_INIT},
     {"termsync", "tsy",	    P_BOOL|P_VI_DEF,

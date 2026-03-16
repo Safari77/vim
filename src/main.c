@@ -892,8 +892,6 @@ vim_main2(void)
     may_req_termresponse();
 
     may_req_bg_color();
-
-    may_req_sync_output();
 # endif
 
     // start in insert mode
@@ -1857,7 +1855,7 @@ getout(int exitval)
     free_cmd_argsW();
 #endif
 
-    term_set_sync_output(TERM_SYNC_OUTPUT_OFF);
+    term_disable_dec();
 
     mch_exit(exitval);
 }

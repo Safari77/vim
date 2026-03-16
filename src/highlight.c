@@ -4371,8 +4371,14 @@ highlight_changed(void)
 	}
     }
 
+    // Highlight ids may have been changed, so keep windows up to date
     FOR_ALL_WINDOWS(wp)
-	wp->w_hlfwin_id = hlf_get_id(wp, HLF_WIN);
+    {
+	char *errmsg = update_winhighlight(wp, wp->w_p_whl);
+
+	if (errmsg != NULL)
+	    emsg(_(errmsg));
+    }
 
 #ifdef FEAT_TERMINAL
     term_update_hlfwin_all();
@@ -5480,7 +5486,6 @@ update_highlight_overrides(hl_override_T *old, hl_override_T *hl_new, int newlen
 	{
 	    set->arr = hl_new;
 	    set->len = newlen;
-	    break;
 	}
     }
 }
@@ -5752,6 +5757,9 @@ update_winhighlight(win_T *wp, char_u *opt)
 
     if (arr == NULL && err != NULL)
 	return err;
+
+    if (arr == NULL && wp->w_hl == NULL)
+	return NULL;
 
     update_highlight_overrides(wp->w_hl, arr, num);
 
