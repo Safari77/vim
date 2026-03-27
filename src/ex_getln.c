@@ -245,7 +245,7 @@ parse_pattern_and_range(
     // Skip over the range to find the command.
     cmd = skip_range(ea.cmd, TRUE, NULL);
 
-    if (vim_strchr((char_u *)"sgvl", *cmd) == NULL)
+    if (vim_strchr((char_u *)"sgvlu", *cmd) == NULL)
 	return FALSE;
 
     // Skip over command name to find pattern separator
@@ -4785,7 +4785,7 @@ open_cmdwin(void)
 	// win_close() autocommands may have already deleted the buffer.
 	if (newbuf_status == OK && bufref_valid(&bufref) &&
 		bufref.br_buf != curbuf)
-	    close_buffer(NULL, bufref.br_buf, DOBUF_WIPE, FALSE, FALSE);
+	    close_buffer(NULL, bufref.br_buf, DOBUF_WIPE, FALSE, FALSE, FALSE);
 
 	cmdwin_type = 0;
 	cmdwin_win = NULL;
@@ -5000,7 +5000,7 @@ open_cmdwin(void)
 	// win_close() may have already wiped the buffer when 'bh' is
 	// set to 'wipe', autocommands may have closed other windows
 	if (bufref_valid(&bufref) && bufref.br_buf != curbuf)
-	    close_buffer(NULL, bufref.br_buf, DOBUF_WIPE, FALSE, FALSE);
+	    close_buffer(NULL, bufref.br_buf, DOBUF_WIPE, FALSE, FALSE, FALSE);
 
 	// Restore window sizes.
 	win_size_restore(&winsizes);

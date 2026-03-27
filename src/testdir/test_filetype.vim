@@ -194,6 +194,7 @@ def s:GetFilenameChecks(): dict<list<string>>
     coco: ['file.atg'],
     codeowners: ['CODEOWNERS'],
     conaryrecipe: ['file.recipe'],
+    concerto: ['file.cto'],
     conf: ['auto.master', 'file.conf', 'texdoc.cnf', '.x11vncrc', '.chktexrc', '.ripgreprc', 'ripgreprc', 'file.ctags'],
     config: ['/etc/hostname.file', 'any/etc/hostname.file', 'configure.in', 'configure.ac', 'file.at', 'aclocal.m4'],
     confini: ['pacman.conf', 'paru.conf', 'mpv.conf', 'any/.aws/config', 'any/.aws/credentials', 'any/.aws/cli/alias', 'file.nmconnection',
@@ -963,6 +964,7 @@ def s:GetFilenameChecks(): dict<list<string>>
     wgsl: ['file.wgsl'],
     winbatch: ['file.wbt'],
     wit: ['file.wit'],
+    wks: ['file.wks', 'file.wks.in', 'file.wks.inc'],
     wml: ['file.wml'],
     wsh: ['file.wsf', 'file.wsc'],
     wsml: ['file.wsml'],
@@ -2777,6 +2779,12 @@ func Test_inc_file()
   call assert_equal('pov', &filetype)
   bwipe!
 
+  " ObjectScript routine
+  call writefile(['ROUTINE Sample [Type=INC]'], 'Xfile.inc', 'D')
+  split Xfile.inc
+  call assert_equal('objectscript_routine', &filetype)
+  bwipe!
+
   let g:filetype_inc = 'foo'
   split Xfile.inc
   call assert_equal('foo', &filetype)
@@ -2858,6 +2866,54 @@ func Test_inc_file()
   split Xfile.inc
   call assert_equal('foo', &filetype)
   bwipe!
+
+  filetype off
+endfunc
+
+func Test_int_file()
+  filetype on
+
+  " Intel HEX
+  call writefile([':10010000214601360121470136007EFE09D2190140'], 'Xfile.int', 'D')
+  split Xfile.int
+  call assert_equal('hex', &filetype)
+  bwipe!
+
+  " ObjectScript routine
+  call writefile(['ROUTINE Sample [Type=INT]'], 'Xfile.int', 'D')
+  split Xfile.int
+  call assert_equal('objectscript_routine', &filetype)
+  bwipe!
+
+  let g:filetype_int = 'foo'
+  split Xfile.int
+  call assert_equal('foo', &filetype)
+  bwipe!
+  unlet g:filetype_int
+
+  filetype off
+endfunc
+
+func Test_mac_file()
+  filetype on
+
+  " Assembly
+  call writefile(['looks like asm'], 'Xfile.mac', 'D')
+  split Xfile.mac
+  call assert_equal('asm', &filetype)
+  bwipe!
+
+  " ObjectScript routine
+  call writefile(['ROUTINE Sample [Type=MAC]'], 'Xfile.mac', 'D')
+  split Xfile.mac
+  call assert_equal('objectscript_routine', &filetype)
+  bwipe!
+
+  let g:filetype_mac = 'foo'
+  split Xfile.mac
+  call assert_equal('foo', &filetype)
+  bwipe!
+  unlet g:filetype_mac
 
   filetype off
 endfunc

@@ -1037,8 +1037,6 @@ apply_general_options(win_T *wp, dict_T *dict)
 	{
 	    free_callback(&wp->w_filter_cb);
 	    set_callback(&wp->w_filter_cb, &callback);
-	    if (callback.cb_free_name)
-		vim_free(callback.cb_name);
 	}
     }
     nr = dict_get_bool(dict, "mapping", -1);
@@ -1069,9 +1067,6 @@ apply_general_options(win_T *wp, dict_T *dict)
 
     free_callback(&wp->w_close_cb);
     set_callback(&wp->w_close_cb, &callback);
-    if (callback.cb_free_name)
-	vim_free(callback.cb_name);
-
     return OK;
 }
 
@@ -1516,8 +1511,17 @@ popup_adjust_position(win_T *wp)
 		shift_by -= truncate_shift;
 	    }
 
-	    wp->w_wincol -= shift_by;
-	    maxwidth += shift_by;
+	    // When wrapping is enabled and maxwidth is explicitly set,
+	    // don't shift beyond maxwidth - let the text wrap instead.
+	    if (wp->w_p_wrap && wp->w_maxwidth > 0
+				    && maxwidth + shift_by > wp->w_maxwidth)
+		shift_by = wp->w_maxwidth - maxwidth;
+
+	    if (shift_by > 0)
+	    {
+		wp->w_wincol -= shift_by;
+		maxwidth += shift_by;
+	    }
 	    wp->w_width = maxwidth;
 	}
 	if (wp->w_p_wrap)
@@ -2518,8 +2522,6 @@ popup_create(typval_T *argvars, typval_T *rettv, create_type_T type)
 	if (callback.cb_name != NULL)
 	{
 	    set_callback(&wp->w_filter_cb, &callback);
-	    if (callback.cb_free_name)
-		vim_free(callback.cb_name);
 	}
 
 	wp->w_p_wrap = 0;
@@ -3031,6 +3033,7 @@ popup_hide(win_T *wp)
     if (wp->w_winrow + popup_height(wp) >= cmdline_row)
 	clear_cmdline = TRUE;
     redraw_all_later(UPD_NOT_VALID);
+    status_redraw_all();
     popup_mask_refresh = TRUE;
 }
 
@@ -3194,6 +3197,7 @@ popup_free(win_T *wp)
 #endif
 
     redraw_all_later(UPD_NOT_VALID);
+    status_redraw_all();
     popup_mask_refresh = TRUE;
 }
 
@@ -4298,6 +4302,7 @@ popup_mark_opacity_zindex(win_T *wp)
 redraw_win_under_opacity_popup(win_T *wp)
 {
     int	    height;
+    int	    width;
     int	    r;
 
     if (!(wp->w_popup_flags & POPF_OPACITY) || wp->w_popup_blend <= 0
@@ -4305,27 +4310,38 @@ redraw_win_under_opacity_popup(win_T *wp)
 	return;
 
     height = popup_height(wp);
+    width = popup_width(wp);
     for (r = wp->w_winrow;
 		       r < wp->w_winrow + height && r < screen_Rows; ++r)
     {
-	int	    line_cp = r;
-	int	    col_cp = wp->w_wincol;
-	win_T	    *twp;
+	int	    col;
+	win_T	    *prev_twp = NULL;
 
-	twp = mouse_find_win(&line_cp, &col_cp, IGNORE_POPUP);
-	if (twp != NULL)
+	// Check across the full width of the popup to find all underlying
+	// windows (e.g., when the popup spans a vertical split).
+	for (col = wp->w_wincol;
+		       col < wp->w_wincol + width && col < screen_Columns; ++col)
 	{
-	    if (line_cp < twp->w_height)
-	    {
-		linenr_T lnum;
+	    int	    line_cp = r;
+	    int	    col_cp = col;
+	    win_T   *twp;
 
-		(void)mouse_comp_pos(twp, &line_cp, &col_cp, &lnum, NULL);
-		redrawWinline(twp, lnum);
+	    twp = mouse_find_win(&line_cp, &col_cp, IGNORE_POPUP);
+	    if (twp != NULL && twp != prev_twp)
+	    {
+		prev_twp = twp;
+		if (line_cp < twp->w_height)
+		{
+		    linenr_T lnum;
+
+		    (void)mouse_comp_pos(twp, &line_cp, &col_cp, &lnum, NULL);
+		    redrawWinline(twp, lnum);
+		}
+		else if (line_cp == twp->w_height)
+		    // Status bar line: mark for redraw to prevent
+		    // opacity blend accumulation.
+		    twp->w_redr_status = TRUE;
 	    }
-	    else if (line_cp == twp->w_height)
-		// Status bar line: mark for redraw to prevent
-		// opacity blend accumulation.
-		twp->w_redr_status = TRUE;
 	}
     }
 }

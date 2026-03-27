@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Vim\n"
 "Report-Msgid-Bugs-To: vim-dev@vim.org\n"
-"POT-Creation-Date: 2026-03-18 21:08+0000\n"
+"POT-Creation-Date: 2026-03-25 21:51+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -2270,6 +2270,10 @@ msgid "Beep!"
 msgstr ""
 
 #, c-format
+msgid "Executing directly: \"%s\""
+msgstr ""
+
+#, c-format
 msgid "Calling shell to execute: \"%s\""
 msgstr ""
 
@@ -3588,7 +3592,7 @@ msgstr ""
 msgid "type  :help sponsor<Enter>    for information "
 msgstr ""
 
-msgid "menu  Help->Sponsor  for information    "
+msgid "menu  Help->Sponsor           for information    "
 msgstr ""
 
 msgid "global"
@@ -8847,6 +8851,9 @@ msgid "E1573: Cannot listen on port"
 msgstr ""
 
 msgid "E1574: gethostbyname(): cannot resolve hostname in channel_listen()"
+msgstr ""
+
+msgid "E1575: Cannot create pipes"
 msgstr ""
 
 #. type of cmdline window or 0

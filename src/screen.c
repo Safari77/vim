@@ -920,6 +920,14 @@ skip_opacity:
 	    // redraw that one if this one changed, no matter attributes.
 	    if (gui.in_use && changed_this)
 		redraw_next = TRUE;
+# ifdef FEAT_DIRECTX
+	    // DirectWrite subpixel rendering (especially with CFF/OTF
+	    // fonts) can extend pixels beyond cell boundaries to the
+	    // left.  Redraw the current character if the previous one
+	    // changed.
+	    if (gui.directx_enabled && changed_this)
+		redraw_this = TRUE;
+# endif
 #endif
 
 	    ScreenAttrs[off_to] = ScreenAttrs[off_from];
@@ -1731,6 +1739,12 @@ screen_puts_len(
 		if (n & HL_BOLD)
 		    force_redraw_next = TRUE;
 	    }
+#endif
+#ifdef FEAT_DIRECTX
+	    // DirectWrite subpixel rendering can extend pixels beyond
+	    // cell boundaries.  Redraw the next character too.
+	    if (gui.directx_enabled && need_redraw)
+		force_redraw_next = TRUE;
 #endif
 	    // When at the end of the text and overwriting a two-cell
 	    // character with a one-cell character, need to clear the next
@@ -2663,6 +2677,12 @@ skip_opacity_fill:
 			force_next = FALSE;
 		}
 #endif // FEAT_GUI || defined(UNIX)
+#ifdef FEAT_DIRECTX
+		// DirectWrite subpixel rendering can extend pixels
+		// beyond cell boundaries.  Redraw the next character.
+		if (gui.directx_enabled)
+		    force_next = TRUE;
+#endif
 		ScreenLines[off] = c;
 		if (enc_utf8)
 		{
@@ -3799,7 +3819,7 @@ win_do_lines(
 	    && wp->w_width == topframe->fr_width)
     {
 	if (!no_win_do_lines_ins)
-	    screenclear();	    // will set wp->w_lines_valid to 0
+	    redraw_as_cleared();    // don't clear the screen to avoid flicker
 	return FAIL;
     }
 
@@ -3824,6 +3844,13 @@ win_do_lines(
      */
     if (!no_win_do_lines_ins)
 	clear_cmdline = TRUE;
+
+#if defined(FEAT_TABPANEL)
+    // Terminal scroll operations affect the full screen width, which would
+    // corrupt the vertical tabpanel area and cause flicker.
+    if (tabpanel_width() > 0)
+	return FAIL;
+#endif
 
     /*
      * If the terminal can set a scroll region, use that.
@@ -4397,17 +4424,20 @@ screen_del_lines(
 
 /*
  * Return TRUE when postponing displaying the mode message: when not redrawing
- * or inside a mapping.
+ * or inside a mapping or a script.
  */
     int
 skip_showmode(void)
 {
-    // Call char_avail() only when we are going to show something, because it
-    // takes a bit of time.  redrawing() may also call char_avail().
+    // Check the stuff buffer, typeahead buffer and script input for pending
+    // characters, instead of char_avail() which also reads raw terminal input
+    // and may pick up terminal response sequences (e.g. t_RV response),
+    // falsely preventing the mode from being shown.
     if (global_busy
 	    || msg_silent != 0
 	    || !redrawing()
-	    || (char_avail() && !KeyTyped))
+	    || ((!stuff_empty() || typebuf.tb_len > 0 || using_script())
+		&& !KeyTyped))
     {
 	redraw_mode = TRUE;		// show mode later
 	return TRUE;
