@@ -1865,7 +1865,11 @@ buf_write(
 	    // quotum for number of files).
 	    // Appending will fail if the file does not exist and forceit is
 	    // FALSE.
-	    while ((fd = mch_open((char *)wfname, O_WRONLY | O_EXTRA | (append
+	    // Skip opening if we already have a valid fd from the temp file
+	    // created earlier (tmp_write_fd).  Re-opening the temp file would
+	    // fail with EACCES on Linux when fs.protected_regular is set and
+	    // the file was fchown'd to another user in a sticky directory.
+	    while (fd < 0 && (fd = mch_open((char *)wfname, O_WRONLY | O_EXTRA | (append
 				? (forceit ? (O_APPEND | O_CREAT) : O_APPEND)
 				: (O_CREAT | TRUNC_ON_OPEN))
 				, perm < 0 ? 0666 : (perm & 0777))) < 0)
