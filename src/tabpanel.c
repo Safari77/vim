@@ -57,7 +57,7 @@ tabpanelopt_changed(void)
 {
     char_u	*p;
     int		new_align = ALIGN_LEFT;
-    int		new_columns = 20;
+    long	new_columns = 20;
     int		new_is_vert = FALSE;
 
     p = p_tplo;
@@ -83,6 +83,8 @@ tabpanelopt_changed(void)
 	{
 	    p += 8;
 	    new_columns = getdigits(&p);
+	    if (new_columns < 0 || new_columns > 1000)
+		return FAIL;
 	}
 	else if (STRNCMP(p, "vert", 4) == 0)
 	{
@@ -505,7 +507,8 @@ do_by_tplmode(
 #endif
 			(args.cwp, buf, sizeof(buf),
 			&usefmt, opt_name, opt_scope, TPL_FILLCHAR,
-			args.col_end - args.col_start, &hltab, &tabtab);
+			args.col_end - args.col_start, &hltab, &tabtab,
+			NULL);
 
 		args.prow = &row;
 		args.pcol = &col;
@@ -542,7 +545,7 @@ do_by_tplmode(
     }
 
     // fill the area of TabPanelFill.
-    screen_fill_tailing_area(tplmode, row - args.offsetrow, args.maxrow,
+    screen_fill_tailing_area(tplmode, MAX(row - args.offsetrow, 0), args.maxrow,
 	    args.col_start, args.col_end, attr_tplf);
 }
 
