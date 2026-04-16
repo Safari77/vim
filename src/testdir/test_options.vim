@@ -667,7 +667,7 @@ func Test_set_completion_string_values()
 
   " highlight: special parsing, including auto-completing highlight groups
   " after ':'
-  call assert_equal([&hl, '8'], getcompletion('set hl=', 'cmdline')[0:1])
+  call assert_equal([escape(&hl, '|'), '8'], getcompletion('set hl=', 'cmdline')[0:1])
   call assert_equal('8', getcompletion('set hl+=', 'cmdline')[0])
   call assert_equal(['8:', '8b', '8i'], getcompletion('set hl+=8', 'cmdline')[0:2])
   call assert_equal('8bi', getcompletion('set hl+=8b', 'cmdline')[0])
@@ -870,9 +870,6 @@ func Test_set_option_errors()
   call assert_fails('set commentstring=x', 'E537:')
   call assert_fails('let &commentstring = "x"', 'E537:')
   call assert_fails('set complete=x', 'E539:')
-  call assert_fails('set rulerformat=%-', 'E539:')
-  call assert_fails('set rulerformat=%(', 'E542:')
-  call assert_fails('set rulerformat=%15(%%', 'E542:')
 
   " Test for 'statusline' errors
   call assert_fails('set statusline=%$', 'E539:')
@@ -889,6 +886,11 @@ func Test_set_option_errors()
   call assert_fails('set tabline=%{%}', 'E539:')
   call assert_fails('set tabline=%(', 'E542:')
   call assert_fails('set tabline=%)', 'E542:')
+
+  " Test for 'rulerformat' errors
+  call assert_fails('set rulerformat=%-', 'E539:')
+  call assert_fails('set rulerformat=%(', 'E542:')
+  call assert_fails('set rulerformat=%15(%%', 'E542:')
 
   if has('cursorshape')
     " This invalid value for 'guicursor' used to cause Vim to crash.
@@ -1491,6 +1493,45 @@ func Test_local_scrolloff()
   close
   set so&
   set siso&
+endfunc
+
+func Test_local_scrolloffpad()
+  let save_g_sop = &g:sop
+  let save_l_sop = &l:sop
+  set sop=0
+  call assert_equal(0, &g:sop)
+  call assert_equal(-1, &l:sop)
+  call assert_equal(0, &sop)
+  setglobal sop=1
+  call assert_equal(1, &g:sop)
+  call assert_equal(1, &sop)
+  split
+  call assert_equal(1, &g:sop)
+  call assert_equal(-1, &l:sop)
+  call assert_equal(1, &sop)
+  setlocal sop=0
+  call assert_equal(0, &l:sop)
+  call assert_equal(0, &sop)
+  call assert_equal(1, &g:sop)
+  wincmd p
+  call assert_equal(1, &sop)
+  wincmd p
+  setlocal sop<
+  call assert_equal(-1, &l:sop)
+  call assert_equal(1, &sop)
+  setlocal sop=2
+  call assert_equal(2, &l:sop)
+  call assert_equal(2, &sop)
+  setlocal sop=-1
+  call assert_equal(-1, &l:sop)
+  call assert_equal(1, &sop)  " Uses global value because local is -1
+  call assert_fails("setlocal sop=-2", 'E474:')
+  call assert_equal(-1, &l:sop)
+  call assert_equal(1, &sop)
+  call assert_fails("setlocal sop=foo", 'E521:')
+  close
+  let &g:sop = save_g_sop
+  let &l:sop = save_l_sop
 endfunc
 
 func Test_writedelay()
