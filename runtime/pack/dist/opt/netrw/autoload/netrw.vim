@@ -24,6 +24,8 @@
 " 2026 Mar 01 by Vim Project include portnumber in hostname checking #19533
 " 2026 Apr 01 by Vim Project use fnameescape() with netrw#FileUrlEdit()
 " 2026 Apr 05 by Vim Project Fix netrw#RFC2396() #19913
+" 2026 Apr 15 by Vim Project Add missing escape()
+" 2026 Apr 19 by Vim Project expand ~ on Windows #20003
 " Copyright:  Copyright (C) 2016 Charles E. Campbell {{{1
 "             Permission is hereby granted to use and distribute this code,
 "             with or without modifications, provided that this copyright
@@ -529,8 +531,8 @@ function netrw#Explore(indx,dosplit,style,...)
   NetrwKeepj norm! 0
 
   if a:0 > 0
-    if a:1 =~ '^\~' && (has("unix") || g:netrw_cygwin)
-      let dirname= simplify(substitute(a:1,'\~',expand("$HOME"),''))
+    if a:1 =~ '^\~' && (has("unix") || has("win32") || g:netrw_cygwin)
+      let dirname= simplify(substitute(a:1,'^\~',escape(expand("$HOME"),'\&~'),''))
     elseif a:1 == '.'
       let dirname= simplify(exists("b:netrw_curdir")? b:netrw_curdir : getcwd())
       if dirname !~ '/$'
@@ -5304,6 +5306,8 @@ function s:NetrwMarkFileCompress(islocal)
                 if a:islocal
                     if g:netrw_keepdir
                         let fname= netrw#os#Escape(netrw#fs#ComposePath(curdir,fname))
+                    else
+                        let fname= netrw#os#Escape(fname)
                     endif
                     call system(exe." ".fname)
                     if v:shell_error
@@ -5638,6 +5642,8 @@ function s:NetrwMarkFileExe(islocal,enbloc)
                 if a:islocal
                     if g:netrw_keepdir
                         let fname= netrw#os#Escape(netrw#fs#WinPath(netrw#fs#ComposePath(curdir,fname)))
+                    else
+                        let fname= netrw#os#Escape(netrw#fs#WinPath(fname))
                     endif
                 else
                     let fname= netrw#os#Escape(netrw#fs#WinPath(b:netrw_curdir.fname))
