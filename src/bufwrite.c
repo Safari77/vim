@@ -685,6 +685,10 @@ buf_write(
     char_u	    *ffname;
     char_u	    *wfname = NULL;	// name of file to write to
     char_u	    *wfname_orig = NULL; /* Kill me */
+    char_u	    *fname_real = fname; // path the rename targets:
+                                         // = fname normally, = resolved
+                                         // target if fname is a symlink we want to preserve
+    char_u	    *fname_real_alloc = NULL; // owns fname_real when alloc'd
     char_u	    wftmp[MAXPATHL+1];
     char_u	    *s;
     char_u	    *ptr;
@@ -1077,81 +1081,147 @@ buf_write(
     if (buffer == NULL) goto fail;
     bufsize = WRITEBUFSIZE;
 
-    // Get information about original file (if there is one).
+// Get information about original file (if there is one).
 #if defined(UNIX)
     st_old.st_dev = 0;
     st_old.st_ino = 0;
     perm = -1;
     if (mch_stat((char *)fname, &st_old) < 0) {
-	newfile = TRUE;
-	STRCPY(wftmp, fname);
-	vim_snprintf(wftmp, sizeof(wftmp), "%s.tmp.XXXXXX", fname);
-	if ((tmp_write_fd = mkstemp((char *)wftmp)) >= 0)
-	{
-	    can_write_dir = 1;
-	}
-    } else {
-	perm = st_old.st_mode;
-	if (!S_ISREG(st_old.st_mode))		// not a file
-	{
-	    if (S_ISDIR(st_old.st_mode))
-	    {
-		errnum = (char_u *)"E502: ";
-		errmsg = (char_u *)_(e_is_a_directory);
-		goto fail;
-	    }
-	    if (mch_nodetype(fname) != NODE_WRITABLE)
-	    {
-		errnum = (char_u *)"E503: ";
-		errmsg = (char_u *)_(e_is_not_file_or_writable_device);
-		goto fail;
-	    }
-	    // It's a device of some kind (or a fifo) which we can write to
-	    // but for which we can't make a backup.
-	    device = TRUE;
-	    newfile = TRUE;
-	    perm = -1;
-	}
-	/*
-	 * Check if we can create a file and set the owner/group to
-	 * the ones from the original file.
-	 * First find a file name that doesn't exist yet.
-	 */
-	STRCPY(wftmp, fname);
-	vim_snprintf(wftmp, sizeof(wftmp), "%s.tmp.XXXXXX", fname);
-	if ((tmp_write_fd = mkstemp((char *)wftmp)) >= 0)
+        newfile = TRUE;
+        // Skip the temp-file approach if fname is a dangling symlink:
+        // vanilla vim creates the target through the link via O_CREAT,
+        // and we'd otherwise replace the link with a regular file.
+        if (mch_lstat((char *)fname, &st) != 0)
         {
-#ifdef UNIX
+            STRCPY(wftmp, fname);
+            vim_snprintf(wftmp, sizeof(wftmp), "%s.tmp.XXXXXX", fname);
+            if ((tmp_write_fd = mkstemp((char *)wftmp)) >= 0)
+                can_write_dir = 1;
+        }
+    } else {
+        int	use_temp_rename = TRUE;
+
+        perm = st_old.st_mode;
+        if (!S_ISREG(st_old.st_mode))		// not a file
+        {
+            if (S_ISDIR(st_old.st_mode))
+            {
+                errnum = (char_u *)"E502: ";
+                errmsg = (char_u *)_(e_is_a_directory);
+                goto fail;
+            }
+            if (mch_nodetype(fname) != NODE_WRITABLE)
+            {
+                errnum = (char_u *)"E503: ";
+                errmsg = (char_u *)_(e_is_not_file_or_writable_device);
+                goto fail;
+            }
+            // It's a device of some kind (or a fifo) which we can write to
+            // but for which we can't make a backup.
+            device = TRUE;
+            newfile = TRUE;
+            perm = -1;
+        }
+
+        /*
+         * Decide what path to base the temp file on:
+         *   - hardlinked target (and !BREAKHARDLINK): skip temp+rename,
+         *     truncate-and-overwrite via mch_open below preserves nlink;
+         *   - symlink (and !BREAKSYMLINK): resolve to target so the
+         *     atomic rename replaces the target, leaving the symlink
+         *     intact.  Note this changes the target's inode -- vanilla
+         *     vim's truncate-and-overwrite reuses the inode;
+         *   - everything else: use fname directly.
+         */
+        if (st_old.st_nlink > 1 && !(bkc & BKC_BREAKHARDLINK))
+        {
+            use_temp_rename = FALSE;
+        }
+        else
+        {
+            stat_T  st_link;
+
+            if (mch_lstat((char *)fname, &st_link) == 0
+                    && S_ISLNK(st_link.st_mode)
+                    && !(bkc & BKC_BREAKSYMLINK))
+            {
+                // Resolve the symlink chain.  realpath() returns the
+                // canonical path with all symlinks expanded.
+                char_u *resolved = alloc(MAXPATHL);
+
+                if (resolved == NULL
+                        || realpath((char *)fname,
+                                                (char *)resolved) == NULL)
+                {
+                    // Resolve failed (loop, broken link, etc.) -- fall
+                    // back to truncate-and-overwrite via the symlink.
+                    vim_free(resolved);
+                    use_temp_rename = FALSE;
+                }
+                else
+                {
+                    stat_T st_target;
+
+                    // Target must be a regular, single-linked file
+                    // (unless we're explicitly breaking hardlinks).
+                    if (mch_stat((char *)resolved, &st_target) != 0
+                            || !S_ISREG(st_target.st_mode)
+                            || (st_target.st_nlink > 1
+                                && !(bkc & BKC_BREAKHARDLINK)))
+                    {
+                        vim_free(resolved);
+                        use_temp_rename = FALSE;
+                    }
+                    else
+                    {
+                        fname_real = resolved;
+                        fname_real_alloc = resolved;
+                    }
+                }
+            }
+            // else: not a symlink, or we want to break it -- fname_real
+            //       stays == fname and the rename will operate on it.
+        }
+
+        if (use_temp_rename)
+        {
+            /*
+             * Check if we can create a file in the target's directory
+             * and set the owner/group to those of the original file.
+             */
+            STRCPY(wftmp, fname_real);
+            vim_snprintf(wftmp, sizeof(wftmp),
+                                            "%s.tmp.XXXXXX", fname_real);
+            if ((tmp_write_fd = mkstemp((char *)wftmp)) >= 0)
+            {
 # ifdef HAVE_FCHOWN
-	    // Try to preserve the original owner/group on the temp file.
-	    // This fails with EPERM if the file is owned by another user.
-	    // That is acceptable for ":w!" (forceit) when the user has
-	    // write access to the directory: the rename will succeed and
-	    // the new file will simply be owned by the current user.
-	    if (fchown(tmp_write_fd, st_old.st_uid, st_old.st_gid) != 0
-		    && forceit
-		    && (st_old.st_uid != getuid()
-			|| st_old.st_gid != getgid()))
-		// For security strip suid/sgid/sticky when the new file
-		// will be owned by a different user/group.
-		perm &= ~(S_ISUID | S_ISGID | S_ISVTX);
-	    fchmod(tmp_write_fd, perm);
+                // Try to preserve the original owner/group.  Fails with
+                // EPERM when the file is owned by another user; that is
+                // fine for ":w!" -- the user accepts the new file being
+                // owned by them.
+                if (fchown(tmp_write_fd,
+                                  st_old.st_uid, st_old.st_gid) != 0
+                        && forceit
+                        && (st_old.st_uid != getuid()
+                            || st_old.st_gid != getgid()))
+                    // Strip suid/sgid/sticky when the new file will be
+                    // owned by a different user/group.
+                    perm &= ~(S_ISUID | S_ISGID | S_ISVTX);
+                fchmod(tmp_write_fd, perm);
 # endif
-	    if (mch_stat((char *)wftmp, &st) == 0
-		&& st.st_mode == perm
-		&& ((st.st_uid == st_old.st_uid
-		     && st.st_gid == st_old.st_gid)
-		    || forceit))
-		can_write_dir = 1;
-# else
-	    can_write_dir = 1;
-# endif
-	    if (can_write_dir == 0) {
-		close(tmp_write_fd);
-		mch_remove(wftmp);
-		tmp_write_fd = -1;
-	    }
-	}
+                if (mch_stat((char *)wftmp, &st) == 0
+                        && st.st_mode == perm
+                        && ((st.st_uid == st_old.st_uid
+                             && st.st_gid == st_old.st_gid)
+                            || forceit))
+                    can_write_dir = 1;
+                if (can_write_dir == 0) {
+                    close(tmp_write_fd);
+                    mch_remove(wftmp);
+                    tmp_write_fd = -1;
+                }
+            }
+        }
     }
 #else // !UNIX
     // Check for a writable device name.
@@ -1851,7 +1921,7 @@ buf_write(
 	    if (tmp_write_fd >= 0 && (wfname == fname) && !append) {
 		// Use the file we opened earlier
 		fd = tmp_write_fd;
-		wfname_orig = wfname;
+		wfname_orig = fname_real; // resolved target if symlink
 		wfname = wftmp;
 	    } else {
 		// We have an open temp file but aren't using it (e.g. append mode or backup_copy forced overwrite)
@@ -2628,6 +2698,7 @@ nofail:
     buf->b_saving = false;
 
     vim_free(backup);
+    vim_free(fname_real_alloc);
     vim_free(buffer);
     vim_free(fenc_tofree);
     vim_free(write_info.bw_conv_buf);
