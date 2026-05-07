@@ -1120,16 +1120,28 @@ buf_write(
 	STRCPY(wftmp, fname);
 	vim_snprintf(wftmp, sizeof(wftmp), "%s.tmp.XXXXXX", fname);
 	if ((tmp_write_fd = mkstemp((char *)wftmp)) >= 0)
-	{
+        {
 #ifdef UNIX
 # ifdef HAVE_FCHOWN
-	    fchown(tmp_write_fd, st_old.st_uid, st_old.st_gid);
+	    // Try to preserve the original owner/group on the temp file.
+	    // This fails with EPERM if the file is owned by another user.
+	    // That is acceptable for ":w!" (forceit) when the user has
+	    // write access to the directory: the rename will succeed and
+	    // the new file will simply be owned by the current user.
+	    if (fchown(tmp_write_fd, st_old.st_uid, st_old.st_gid) != 0
+		    && forceit
+		    && (st_old.st_uid != getuid()
+			|| st_old.st_gid != getgid()))
+		// For security strip suid/sgid/sticky when the new file
+		// will be owned by a different user/group.
+		perm &= ~(S_ISUID | S_ISGID | S_ISVTX);
 	    fchmod(tmp_write_fd, perm);
 # endif
 	    if (mch_stat((char *)wftmp, &st) == 0
-		&& st.st_uid == st_old.st_uid
-		&& st.st_gid == st_old.st_gid
-		&& st.st_mode == perm)
+		&& st.st_mode == perm
+		&& ((st.st_uid == st_old.st_uid
+		     && st.st_gid == st_old.st_gid)
+		    || forceit))
 		can_write_dir = 1;
 # else
 	    can_write_dir = 1;
@@ -1539,6 +1551,7 @@ buf_write(
 	    }
     nobackup:
 	    close(fd);		// ignore errors for closing read file
+	    fd = -1;
 	    vim_free(copybuf);
 
 	    if (backup == NULL && errmsg == NULL)
