@@ -1891,7 +1891,8 @@ clip_x11_set_selection(Clipboard_T *cbd UNUSED)
 
 # endif
 
-# if defined(FEAT_XCLIPBOARD) || defined(FEAT_GUI_X11) || defined(FEAT_GUI_GTK)
+# if (defined(FEAT_XCLIPBOARD) || defined(FEAT_GUI_X11) || defined(FEAT_GUI_GTK)) \
+	&& !defined(USE_GTK4)
 /*
  * Get the contents of the X CUT_BUFFER0 and put it in "cbd".
  */
@@ -3298,7 +3299,7 @@ did_set_clipboard(optset_T *args UNUSED)
 	vim_regfree(clip_exclude_prog);
 	clip_exclude_prog = new_exclude_prog;
 # endif
-# ifdef FEAT_GUI_GTK
+# if defined(FEAT_GUI_GTK) && !defined(USE_GTK4)
 	if (gui.in_use)
 	{
 	    gui_gtk_set_selection_targets((GdkAtom)GDK_SELECTION_PRIMARY);
@@ -3428,12 +3429,16 @@ clip_provider_get_callback(
     static void
 clip_provider_copy(char_u *reg, char_u *provider)
 {
+    static bool	recursive = false;
     callback_T	callback;
     typval_T	rettv;
     typval_T	argvars[4];
     yankreg_T	*y_ptr;
     char_u	type[2 + NUMBUFLEN] = {0};
     list_T	*list = NULL;
+
+    if (recursive)
+	return;
 
     if (clip_provider_get_callback(
 		reg,
@@ -3497,7 +3502,9 @@ clip_provider_copy(char_u *reg, char_u *provider)
     argvars[3].v_type = VAR_UNKNOWN;
 
     textlock++;
+    recursive = true;
     call_callback(&callback, -1, &rettv, 3, argvars);
+    recursive = false;
     clear_tv(&rettv);
     textlock--;
 
@@ -3508,12 +3515,16 @@ clip_provider_copy(char_u *reg, char_u *provider)
     static void
 clip_provider_paste(char_u *reg, char_u *provider)
 {
+    static bool	recursive = false;
     callback_T	callback;
     typval_T	argvars[2];
     typval_T	rettv;
     int		ret;
     char_u	*reg_type;
     list_T	*lines;
+
+    if (recursive)
+	return;
 
     if (clip_provider_get_callback(
 		reg,
@@ -3528,7 +3539,9 @@ clip_provider_paste(char_u *reg, char_u *provider)
     argvars[1].v_type = VAR_UNKNOWN;
 
     textlock++;
+    recursive = true;
     ret = call_callback(&callback, -1, &rettv, 1, argvars);
+    recursive = false;
     textlock--;
 
     if (ret == FAIL)
@@ -3599,7 +3612,7 @@ clip_provider_paste(char_u *reg, char_u *provider)
 	}
 	*curval++ = NULL;
 
-	if (*reg_type != NUL && (STRLEN(reg_type) <= 0
+	if (*reg_type != NUL && (STRLEN(reg_type) == 0
 		|| get_yank_type(&reg_type, &yank_type, &block_len) == FAIL))
 	{
 	    emsg(e_invalid_argument);

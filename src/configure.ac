@@ -330,7 +330,7 @@ if test "$vim_cv_uname_output" = Darwin; then
 
      dnl Assume we don't want X11 unless it was specifically asked for
      dnl (--with-x) or Motif or GTK GUI is used.
-     if test -z "$with_x" -a "X$enable_gui" != Xmotif -a "X$enable_gui" != Xgtk2 -a "X$enable_gui" != Xgtk3; then
+     if test -z "$with_x" -a "X$enable_gui" != Xmotif -a "X$enable_gui" != Xgtk2 -a "X$enable_gui" != Xgtk3 -a "X$enable_gui" != Xgtk4; then
       with_x=no
      fi
   fi
@@ -2608,11 +2608,11 @@ if test "x$with_x" = xno -a "x$with_x_arg" = xyes; then
     AC_MSG_ERROR([could not configure X])
 fi
 
-test "x$with_x" = xno -a "x$HAIKU" != "xyes" -a "x$MACOS_X" != "xyes" -a "x$QNX" != "xyes" && enable_gui=no
+test "x$with_x" = xno -a "x$HAIKU" != "xyes" -a "x$MACOS_X" != "xyes" -a "x$QNX" != "xyes" -a "x$enable_gui" != xgtk4 && enable_gui=no
 
 AC_MSG_CHECKING(--enable-gui argument)
 AC_ARG_ENABLE(gui,
- [  --enable-gui[=OPTS]       X11 GUI. [default=auto] [OPTS=auto/no/gtk2/gnome2/gtk3/motif/haiku/photon/carbon]], , enable_gui="auto")
+ [  --enable-gui[=OPTS]       X11 GUI. [default=auto] [OPTS=auto/no/gtk2/gnome2/gtk3/gtk4/motif/haiku/photon/carbon]], , enable_gui="auto")
 
 dnl Canonicalize the --enable-gui= argument so that it can be easily compared.
 dnl Do not use character classes for portability with old tools.
@@ -2622,6 +2622,7 @@ enable_gui_canon=`echo "_$enable_gui" | \
 dnl Skip everything by default.
 SKIP_GTK2=YES
 SKIP_GTK3=YES
+SKIP_GTK4=YES
 SKIP_GNOME=YES
 SKIP_MOTIF=YES
 SKIP_PHOTON=YES
@@ -2645,7 +2646,7 @@ elif test "x$QNX" = "xyes" -a "x$with_x" = "xno" ; then
     no)		AC_MSG_RESULT(no GUI support)
 		SKIP_PHOTON=YES ;;
     yes|""|auto) AC_MSG_RESULT(automatic GUI support)
-    		gui_auto=yes ;;
+		gui_auto=yes ;;
     photon)	AC_MSG_RESULT(Photon GUI support) ;;
     *)		AC_MSG_RESULT([Sorry, $enable_gui GUI is not supported])
 		SKIP_PHOTON=YES ;;
@@ -2655,7 +2656,7 @@ elif test "x$MACOS_X" = "xyes" -a "x$with_x" = "xno" ; then
   case "$enable_gui_canon" in
     no)		AC_MSG_RESULT(no GUI support) ;;
     yes|"")	AC_MSG_RESULT(yes - automatic GUI support)
-    		gui_auto=yes ;;
+		gui_auto=yes ;;
     auto)	AC_MSG_RESULT(auto - disable GUI support for Mac OS) ;;
     *)		AC_MSG_RESULT([Sorry, $enable_gui GUI is not supported]) ;;
   esac
@@ -2667,6 +2668,7 @@ else
 		gui_auto=yes
 		SKIP_GTK2=
 		SKIP_GTK3=
+		SKIP_GTK4=
 		SKIP_GNOME=
 		SKIP_MOTIF=;;
     gtk2)	AC_MSG_RESULT(GTK+ 2.x GUI support)
@@ -2676,6 +2678,8 @@ else
 		SKIP_GTK2=;;
     gtk3)	AC_MSG_RESULT(GTK+ 3.x GUI support)
 		SKIP_GTK3=;;
+    gtk4)	AC_MSG_RESULT(GTK 4.x GUI support)
+		SKIP_GTK4=;;
     motif)	AC_MSG_RESULT(Motif GUI support)
 		SKIP_MOTIF=;;
     *)		AC_MSG_RESULT([Sorry, $enable_gui GUI is not supported]) ;;
@@ -2704,6 +2708,17 @@ if test "x$SKIP_GNOME" != "xYES" -a "$enable_gui_canon" != "gnome2"; then
   AC_MSG_RESULT($enable_gnome_check)
   if test "x$enable_gnome_check" = "xno"; then
     SKIP_GNOME=YES
+  fi
+fi
+
+if test "x$SKIP_GTK4" != "xYES" -a "$enable_gui_canon" != "gtk4"; then
+  AC_MSG_CHECKING(whether or not to look for GTK 4)
+  AC_ARG_ENABLE(gtk4-check,
+	[  --enable-gtk4-check     If auto-select GUI, check for GTK 4 [default=yes]],
+	, enable_gtk4_check="yes")
+  AC_MSG_RESULT($enable_gtk4_check)
+  if test "x$enable_gtk4_check" = "xno"; then
+    SKIP_GTK4=YES
   fi
 fi
 
@@ -2746,6 +2761,7 @@ AC_DEFUN(AM_PATH_GTK,
     AS_CASE([$min_gtk_version],
 	    [2.*], [gtk_pkg_name="gtk+-2.0"],
 	    [3.*], [gtk_pkg_name="gtk+-3.0"],
+	    [4.*], [gtk_pkg_name="gtk4"],
 		   [AC_MSG_FAILURE([The configure script does not know which pkg-config name to use for GTK $min_gtk_version"])])
 
     AC_MSG_CHECKING([for pkg-config $gtk_pkg_name])
@@ -2753,9 +2769,9 @@ AC_DEFUN(AM_PATH_GTK,
 	  [
 	     AC_MSG_RESULT(found)
 	     AC_MSG_CHECKING([for GTK - version >= $min_gtk_version])
-	     dnl We should be using PKG_CHECK_MODULES() instead of this hack.
-	     dnl But I guess the dependency on pkgconfig.m4 is not wanted or
-	     dnl something like that.
+dnl We should be using PKG_CHECK_MODULES() instead of this hack.
+dnl But I guess the dependency on pkgconfig.m4 is not wanted or
+dnl something like that.
 	     GTK_CPPFLAGS=`$PKG_CONFIG --cflags-only-I $gtk_pkg_name`
 	     GTK_CFLAGS=`$PKG_CONFIG --cflags-only-other $gtk_pkg_name`
 	     GTK_LIBDIR=`$PKG_CONFIG --libs-only-L $gtk_pkg_name`
@@ -2934,7 +2950,7 @@ AC_DEFUN([GNOME_INIT],[
 ])
 
 dnl ---------------------------------------------------------------------------
-dnl Check for GTK3. If it succeeds, skip the check for GTK2.
+dnl Check for GTK3. If it succeeds, skip the check for GTK2/GTK4
 dnl ---------------------------------------------------------------------------
 if test -z "$SKIP_GTK3"; then
   AC_MSG_CHECKING(--disable-gtktest argument)
@@ -2953,11 +2969,53 @@ if test -z "$SKIP_GTK3"; then
 		 GUI_INC_LOC="$GTK_CPPFLAGS"])
     if test -n "$GTK_CPPFLAGS"; then
       SKIP_GTK2=YES
+      SKIP_GTK4=YES
       SKIP_GNOME=YES
       SKIP_MOTIF=YES
       GUITYPE=GTK
       AC_SUBST(GTK_LIBNAME)
       AC_DEFINE(USE_GTK3)
+    fi
+  fi
+fi
+
+dnl ---------------------------------------------------------------------------
+dnl Check for GTK4. If it succeeds, skip the check for GTK3/GTK2.
+dnl ---------------------------------------------------------------------------
+if test -z "$SKIP_GTK4"; then
+  AC_MSG_CHECKING(--disable-gtktest argument)
+  AC_ARG_ENABLE(gtktest, [  --disable-gtktest       Do not try to compile and run a test GTK program],
+	, enable_gtktest=yes)
+  if test "x$enable_gtktest" = "xyes" ; then
+    AC_MSG_RESULT(gtk test enabled)
+  else
+    AC_MSG_RESULT(gtk test disabled)
+  fi
+
+  if test "x$PKG_CONFIG" != "xno"; then
+    AM_PATH_GTK(4.0.0,
+		[GUI_LIB_LOC="$GTK_LIBDIR"
+		 GTK_LIBNAME="$GTK_LIBS"
+		 GUI_INC_LOC="$GTK_CPPFLAGS"])
+    if test -n "$GTK_CPPFLAGS"; then
+      SKIP_GTK3=YES
+      SKIP_GTK2=YES
+      SKIP_GNOME=YES
+      SKIP_MOTIF=YES
+      GUITYPE=GTK4
+      AC_SUBST(GTK_LIBNAME)
+      AC_DEFINE(USE_GTK4)
+      dnl GTK4 does not use any X11 APIs directly.
+      dnl GTK4 itself links against X11 for its backend, so the
+      dnl dynamic linker resolves X11 symbols via GTK4's dependency.
+      X_LIBS=
+      X_PRE_LIBS=
+      X_EXTRA_LIBS=
+      X_LIB=
+      dnl automatically enable XIM for GTK4
+      if test "$enable_xim" = "auto"; then
+        enable_xim="yes"
+      fi
     fi
   fi
 fi

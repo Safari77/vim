@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Vim\n"
 "Report-Msgid-Bugs-To: vim-dev@vim.org\n"
-"POT-Creation-Date: 2026-05-07 19:25+0000\n"
+"POT-Creation-Date: 2026-05-19 18:20+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -921,9 +921,11 @@ msgstr ""
 msgid "VIM - Search..."
 msgstr ""
 
+#. "Find what:" label + entry
 msgid "Find what:"
 msgstr ""
 
+#. "Replace with:" label + entry
 msgid "Replace with:"
 msgstr ""
 
@@ -955,6 +957,12 @@ msgid "Replace All"
 msgstr ""
 
 msgid "_Close"
+msgstr ""
+
+msgid "Direction:"
+msgstr ""
+
+msgid "Close"
 msgstr ""
 
 msgid "Vim: Received \"die\" request from session manager\n"
@@ -1967,6 +1975,9 @@ msgid "???BLOCK MISSING"
 msgstr ""
 
 msgid "??? from here until ???END lines may be messed up"
+msgstr ""
+
+msgid "??? block header corrupted"
 msgstr ""
 
 msgid "??? from here until ???END lines may have been inserted/deleted"
@@ -3449,6 +3460,9 @@ msgid ""
 msgstr ""
 
 msgid "without GUI."
+msgstr ""
+
+msgid "with GTK4 GUI."
 msgstr ""
 
 msgid "with GTK3 GUI."
@@ -9344,6 +9358,9 @@ msgid ""
 msgstr ""
 
 msgid "file names in a tags file are relative to the tags file"
+msgstr ""
+
+msgid "a :tag command cannot access remote files"
 msgstr ""
 
 msgid "a :tag command will use the tagstack"

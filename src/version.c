@@ -730,6 +730,54 @@ static char *(features[]) =
 static int included_patches[] =
 {   /* Add new patch number below this line */
 /**/
+    505,
+/**/
+    504,
+/**/
+    503,
+/**/
+    502,
+/**/
+    501,
+/**/
+    500,
+/**/
+    499,
+/**/
+    498,
+/**/
+    497,
+/**/
+    496,
+/**/
+    495,
+/**/
+    494,
+/**/
+    493,
+/**/
+    492,
+/**/
+    491,
+/**/
+    490,
+/**/
+    489,
+/**/
+    488,
+/**/
+    487,
+/**/
+    486,
+/**/
+    485,
+/**/
+    484,
+/**/
+    483,
+/**/
+    482,
+/**/
     481,
 /**/
     480,
@@ -2039,7 +2087,9 @@ list_version(void)
 #if !defined(FEAT_GUI)
     msg_puts(_("without GUI."));
 #elif defined(FEAT_GUI_GTK)
-# if defined(USE_GTK3)
+# if defined(USE_GTK4)
+    msg_puts(_("with GTK4 GUI."));
+# elif defined(USE_GTK3)
     msg_puts(_("with GTK3 GUI."));
 # elif defined(FEAT_GUI_GNOME)
     msg_puts(_("with GTK2-GNOME GUI."));

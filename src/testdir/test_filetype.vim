@@ -1888,6 +1888,27 @@ func Test_html_file()
   call assert_equal('htmlangular', &filetype)
   bwipe!
 
+  " HTML Angular ng-template element
+  let content = ['<ng-template let-foo>{{ foo }}</ng-template>']
+  call writefile(content, 'Xfile.html', 'D')
+  split Xfile.html
+  call assert_equal('htmlangular', &filetype)
+  bwipe!
+
+  " HTML Angular ng-content element
+  let content = ['<div><ng-content select="[item]"></ng-content></div>']
+  call writefile(content, 'Xfile.html', 'D')
+  split Xfile.html
+  call assert_equal('htmlangular', &filetype)
+  bwipe!
+
+  " Word containing 'ng-template' as a suffix must not trigger htmlangular
+  let content = ['<div class="song-template">', '  <h1>Not Angular</h1>', '</div>']
+  call writefile(content, 'Xfile.html', 'D')
+  split Xfile.html
+  call assert_equal('html', &filetype)
+  bwipe!
+
   " Django Template
   let content = ['{% if foobar %}',
       \ '    <ul>',
@@ -2066,6 +2087,37 @@ func Test_m4_file()
     call delete('Xsandbox', 'rf')
     filetype off
   endtry
+endfunc
+
+func Test_mm_file()
+  filetype on
+
+  call writefile(['#import "test.h"'], 'Xfile.mm', 'D')
+  split Xfile.mm
+  call assert_equal('objcpp', &filetype)
+  bwipe!
+
+  call writefile(['// Objective-C++ line comment'], 'Xfile.mm', 'D')
+  split Xfile.mm
+  call assert_equal('objcpp', &filetype)
+  bwipe!
+
+  call writefile(['.TH VIM 1 "YYYY Mth DD"'], 'Xfile.mm', 'D')
+  split Xfile.mm
+  call assert_equal('nroff', &filetype)
+  bwipe!
+
+  try
+    let g:filetype_mm = 'objcpp'
+    call writefile(['.TH VIM 1 "YYYY Mth DD"'], 'Xfile_override.mm', 'D')
+    split Xfile_override.mm
+    call assert_equal('objcpp', &filetype)
+    bwipe!
+  finally
+    unlet! g:filetype_mm
+  endtry
+
+  filetype off
 endfunc
 
 func Test_mod_file()
@@ -3444,6 +3496,36 @@ func Test_app_file()
   bwipe!
 
   filetype off
+endfunc
+
+func Test_cucumber_code_injection()
+  CheckFeature ruby
+  filetype plugin on
+
+  call mkdir('Xcucu/features/step_definitions', 'pR')
+  call writefile([
+        \ 'Feature: demo',
+        \ '  Scenario: trigger',
+        \ '    Given xyzzy',
+        \ ], 'Xcucu/features/test.feature')
+  let marker = getcwd() . '/Xcucu/MARKER'
+  " Malicious step: terminates the regex literal, injects Ruby system(),
+  " comments the trailing slash.  With the fix, the pattern is passed to
+  " Regexp.new() instead of Kernel.eval() and the payload is inert.
+  call writefile([
+        \ 'Given /xyzzy/; system("touch ' . marker . '"); #/ do',
+        \ 'end',
+        \ ], 'Xcucu/features/step_definitions/poc.rb')
+
+  new Xcucu/features/test.feature
+  call assert_equal('cucumber', &filetype)
+  call cursor(3, 1)
+  " Triggers s:jump -> s:steps -> s:stepmatch on every discovered step,
+  " including the malicious one.  Suppress preview and error messages.
+  silent! normal [d
+  call assert_false(filereadable(marker), 'Ruby injection executed')
+  bwipe!
+  filetype plugin off
 endfunc
 
 " vim: shiftwidth=2 sts=2 expandtab
