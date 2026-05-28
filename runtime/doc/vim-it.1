@@ -1,4 +1,4 @@
-.TH VIM 1 "27 giugno 2025"
+.TH VIM 1 "22 maggio 2026"
 .SH NOME
 vim \- VI Migliorato, un editor di testi per programmatori
 .SH SINTASSI
@@ -195,6 +195,17 @@ comando di uno script.
 Eseguire
 .B Vim
 in Modo Ex, come se il programma eseguito sia "ex".
+.TP
+\-display {display}
+Eseguire
+.B Vim
+sul terminale
+.IR {display} ,
+connettendosi al server X indicato, invece che a quello specificato
+dalla variabile d'ambiente $DISPLAY.
+La forma lunga "\-\-display" è accettata solo dalle GUI GTK+ 2 e GTK+ 3.
+In ogni caso, Vim dev'essere stato compilato con la funzionalità
+.B +xterm_clipboard.
 .TP
 \-E
 Eseguire
@@ -519,10 +530,11 @@ Quando si sta usando il server a socket [socketserver backend], se il nome
 inizia con "/", "./", o "../", è considerato come il percorso, assoluto o
 relativo per arrivare al socket.
 .TP
-\-\-clientserver {backend}
-Usare {backend} come interfaccia per la funzionalità client/server,
-rispettivamente, o "socket" o "x11".  Disponibile solo se Vim è stato
-compilato con le due funzionalità socketserver e X11.
+\-\-clientserver {metodo}
+Usare {metodo} come interfaccia per la funzionalità client/server. Può valere
+"socket" o "x11" o "mswin".  Disponibile solo se Vim è stato compilato sia con
+la funzionalità socketserver che con quella X11, o se compilato con la
+funzionalità socketserver in ambiente MS-Windows.
 .TP
 \-\-socketid {id}
 Solo per GUI GTK: Usare meccanismo GtkPlug per eseguire gVim in un'altra

@@ -2850,6 +2850,18 @@ mainwin_screen_changed_cb(GtkWidget  *widget,
     }
 }
 
+    static gboolean
+mainwin_state_event_cb(GtkWidget *widget UNUSED,
+		       GdkEventWindowState *event,
+		       gpointer user_data UNUSED)
+{
+    if (event->new_window_state & GDK_WINDOW_STATE_FULLSCREEN)
+	// To redraw the text area when switching to fullscreen mode, we will
+	// reuse the `gui_focus_change` method.
+	gui_focus_change(TRUE);
+    return FALSE;
+}
+
 /*
  * After the drawing area comes up, we calculate all colors and create the
  * dummy blank cursor.
@@ -3581,7 +3593,7 @@ gui_mch_update_tabline(void)
 	    gtk_notebook_insert_page(GTK_NOTEBOOK(gui.tabline),
 		    page,
 		    event_box,
-		    nr++);
+		    nr);
 # if GTK_CHECK_VERSION(2,10,0)
 	    gtk_notebook_set_tab_reorderable(GTK_NOTEBOOK(gui.tabline),
 		    page,
@@ -3825,6 +3837,9 @@ gui_mch_init(void)
 
     g_signal_connect(G_OBJECT(gui.mainwin), "screen-changed",
 		     G_CALLBACK(&mainwin_screen_changed_cb), NULL);
+
+    g_signal_connect(G_OBJECT(gui.mainwin), "window-state-event",
+		     G_CALLBACK(&mainwin_state_event_cb), NULL);
 
     gui.accel_group = gtk_accel_group_new();
     gtk_window_add_accel_group(GTK_WINDOW(gui.mainwin), gui.accel_group);

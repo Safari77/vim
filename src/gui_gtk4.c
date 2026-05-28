@@ -280,11 +280,13 @@ static gboolean drop_cb(GtkDropTarget *target, const GValue *value, double x, do
 #endif
 static void mainwin_destroy_cb(GObject *object, gpointer data);
 static gboolean delete_event_cb(GtkWindow *window, gpointer data);
+static void mainwin_fullscreened_cb(GObject *obj, GParamSpec *pspec, gpointer user_data);
 static void drawarea_realize_cb(GtkWidget *widget, gpointer data);
 static void drawarea_unrealize_cb(GtkWidget *widget, gpointer data);
 static void drawarea_resize_cb(GtkDrawingArea *area, int width, int height, gpointer data);
 static void drawarea_scale_factor_cb(GObject *object, GParamSpec *pspec, gpointer data);
 static cairo_surface_t *create_backing_surface(int width, int height);
+static void clipboard_changed_cb(GdkClipboard *clipboard, gpointer user_data);
 
 /*
  * Parse the GUI related command-line arguments.  Any arguments used are
@@ -448,6 +450,8 @@ gui_mch_init(void)
 
     g_signal_connect(G_OBJECT(gui.mainwin), "close-request",
 		     G_CALLBACK(delete_event_cb), NULL);
+    g_signal_connect(G_OBJECT(gui.mainwin), "notify::fullscreened",
+		     G_CALLBACK(mainwin_fullscreened_cb), NULL);
 
     // A vertical box holds the menubar, toolbar and main text window.
     vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
@@ -477,7 +481,7 @@ gui_mch_init(void)
 #ifdef FEAT_GUI_TABLINE
     gui.tabline = gtk_notebook_new();
     gtk_notebook_set_show_border(GTK_NOTEBOOK(gui.tabline), FALSE);
-    gtk_notebook_set_show_tabs(GTK_NOTEBOOK(gui.tabline), FALSE);
+    gtk_notebook_set_show_tabs(GTK_NOTEBOOK(gui.tabline), TRUE);
     gtk_notebook_set_scrollable(GTK_NOTEBOOK(gui.tabline), TRUE);
     gtk_widget_set_visible(gui.tabline, FALSE);
     gtk_box_append(GTK_BOX(vbox), gui.tabline);
@@ -528,7 +532,10 @@ gui_mch_init(void)
 			 G_CALLBACK(key_press_event), NULL);
 	g_signal_connect(key_ctrl, "key-released",
 			 G_CALLBACK(key_release_event), NULL);
-	gtk_widget_add_controller(gui.mainwin, key_ctrl);
+	gtk_widget_add_controller(gui.drawarea, key_ctrl);
+#ifdef FEAT_XIM
+	xim_init();
+#endif
     }
 
     {
@@ -585,6 +592,19 @@ gui_mch_init(void)
 
     // Create a blank (invisible) cursor for hiding the mouse pointer.
     gui.blank_pointer = gdk_cursor_new_from_name("none", NULL);
+
+    {
+	GdkDisplay   *display = gtk_widget_get_display(gui.mainwin);
+	GdkClipboard *primary = gdk_display_get_primary_clipboard(display);
+	GdkClipboard *board = gdk_display_get_clipboard(display);
+
+	if (primary != NULL)
+	    g_signal_connect(primary, "changed",
+		    G_CALLBACK(clipboard_changed_cb), &clip_star);
+	if (board != NULL)
+	    g_signal_connect(board, "changed",
+		    G_CALLBACK(clipboard_changed_cb), &clip_plus);
+    }
 
     return OK;
 }
@@ -730,6 +750,26 @@ gui_mch_unmaximize(void)
 	gtk_window_unmaximize(GTK_WINDOW(gui.mainwin));
 }
 
+    void
+gui_mch_set_fullscreen(int flag)
+{
+    if (gui.mainwin == NULL)
+	return;
+    if (flag)
+	gtk_window_fullscreen(GTK_WINDOW(gui.mainwin));
+    else
+	gtk_window_unfullscreen(GTK_WINDOW(gui.mainwin));
+}
+
+    static void
+mainwin_fullscreened_cb(GObject *obj,
+	GParamSpec *pspec UNUSED, gpointer user_data UNUSED)
+{
+    // Force a redraw of the drawing area when entering fullscreen mode.
+    if (gtk_window_is_fullscreen(GTK_WINDOW(obj)))
+	gui_focus_change(TRUE);
+}
+
 /*
  * Called when the font changed while the window is maximized or GO_KEEPWINSIZE
  * is set.  Recalculate Rows and Columns based on the current window size.
@@ -769,15 +809,9 @@ gui_mch_set_shellsize(int width, int height,
 	int base_width UNUSED, int base_height UNUSED,
 	int direction UNUSED)
 {
-    // Only set window size if it hasn't been shown yet (initial sizing).
-    // After that, the window size is controlled by the user/WM and
-    // Vim adapts to it via form_size_allocate -> gui_resize_shell.
-    if (!gtk_widget_get_realized(gui.mainwin))
-    {
-	width += get_menu_tool_width();
-	height += get_menu_tool_height();
-	gtk_window_set_default_size(GTK_WINDOW(gui.mainwin), width, height);
-    }
+    width += get_menu_tool_width();
+    height += get_menu_tool_height();
+    gtk_window_set_default_size(GTK_WINDOW(gui.mainwin), width, height);
 }
 
     void
@@ -1102,6 +1136,10 @@ gui_mch_init_font(char_u *font_name, int fontset UNUSED)
 
     get_styled_font_variants();
     ascii_glyph_table_init();
+
+    // im window position depends on cursor size which depends on font metrics
+    // update the position after we've initialized font
+    im_set_position(gui.row, gui.col);
 
     return OK;
 }
@@ -1859,15 +1897,14 @@ drawarea_realize_cb(GtkWidget *widget UNUSED, gpointer data UNUSED)
     gui.surface = create_backing_surface(w, h);
 
     gui_mch_new_colors();
-
-#ifdef FEAT_XIM
-    xim_init();
-#endif
 }
 
     static void
 drawarea_unrealize_cb(GtkWidget *widget UNUSED, gpointer data UNUSED)
 {
+#ifdef FEAT_XIM
+    im_shutdown();
+#endif
     if (gui.surface != NULL)
     {
 	cairo_surface_destroy(gui.surface);
@@ -1875,39 +1912,94 @@ drawarea_unrealize_cb(GtkWidget *widget UNUSED, gpointer data UNUSED)
     }
 }
 
+// Debounced resize: drawarea_resize_cb only resizes the backing surface
+// (preserving old content) and (re)arms a short timeout. The actual
+// gui_resize_shell() runs from drawarea_resize_apply_cb once the user has
+// stopped dragging for ~100 ms, by which time no input is pending and
+// update_screen() will not bail in screenclear()'s wake.
+static guint drawarea_resize_timeout_id = 0;
+static int drawarea_resize_pending_w = 0;
+static int drawarea_resize_pending_h = 0;
+
+    static gboolean
+drawarea_resize_apply_cb(gpointer data UNUSED)
+{
+    int width = drawarea_resize_pending_w;
+    int height = drawarea_resize_pending_h;
+
+    drawarea_resize_timeout_id = 0;
+
+    if (width <= 0 || height <= 0)
+	return G_SOURCE_REMOVE;
+    if (updating_screen)
+    {
+	drawarea_resize_timeout_id = g_timeout_add(50,
+		drawarea_resize_apply_cb, NULL);
+	return G_SOURCE_REMOVE;
+    }
+
+    gui.force_redraw = TRUE;
+    gui_resize_shell(width, height);
+    if (gui.in_use)
+	redraw_all_later(UPD_CLEAR);
+    return G_SOURCE_REMOVE;
+}
+
     static void
 drawarea_resize_cb(GtkDrawingArea *area UNUSED, int width, int height,
 	gpointer data UNUSED)
 {
     cairo_t *cr;
-    int	    scale = get_drawarea_scale();
+    cairo_surface_t *old_surface;
+    int scale = get_drawarea_scale();
 
     if (width <= 0 || height <= 0)
 	return;
 
+    drawarea_resize_pending_w = width;
+    drawarea_resize_pending_h = height;
+
+    // Keep the backing surface in sync with the drawing area so GTK keeps
+    // showing the previous frame. Re-creating it preserves the old
+    // contents.
     if (gui.surface != NULL)
     {
 	int sw = cairo_image_surface_get_width(gui.surface) / scale;
 	int sh = cairo_image_surface_get_height(gui.surface) / scale;
-
-	if (sw == width && sh == height)
-	    return;
-
-	cairo_surface_destroy(gui.surface);
+	if (sw != width || sh != height)
+	{
+	    old_surface = gui.surface;
+	    gui.surface = create_backing_surface(width, height);
+	    if (gui.surface != NULL)
+	    {
+		cr = cairo_create(gui.surface);
+		set_cairo_source_from_pixel(cr, gui.back_pixel);
+		cairo_paint(cr);
+		cairo_set_source_surface(cr, old_surface, 0, 0);
+		cairo_paint(cr);
+		cairo_destroy(cr);
+	    }
+	    cairo_surface_destroy(old_surface);
+	}
+    }
+    else
+    {
+	gui.surface = create_backing_surface(width, height);
+	if (gui.surface != NULL)
+	{
+	    cr = cairo_create(gui.surface);
+	    set_cairo_source_from_pixel(cr, gui.back_pixel);
+	    cairo_paint(cr);
+	    cairo_destroy(cr);
+	}
     }
 
-    // Create a fresh surface filled with the background color.
-    // Do not copy old surface content: gui_resize_shell() will trigger
-    // a full redraw, and stale content (e.g. intro screen text) would
-    // otherwise remain as ghost artifacts.
-    gui.surface = create_backing_surface(width, height);
-    cr = cairo_create(gui.surface);
-    set_cairo_source_from_pixel(cr, gui.back_pixel);
-    cairo_paint(cr);
-    cairo_destroy(cr);
-
-    // Notify Vim about the new size - this will cause a full redraw
-    gui_resize_shell(width, height);
+    // Debounce: (re)arm the apply timeout, so gui_resize_shell() only
+    // runs once the resize stream settles.
+    if (drawarea_resize_timeout_id != 0)
+	g_source_remove(drawarea_resize_timeout_id);
+    drawarea_resize_timeout_id = g_timeout_add(100,
+	    drawarea_resize_apply_cb, NULL);
 }
 
     static void
@@ -2158,12 +2250,58 @@ gui_mch_set_foreground(void)
     gtk_window_present(GTK_WINDOW(gui.mainwin));
 }
 
+    static int
+query_pointer_pos(int *x, int *y)
+{
+    GtkNative	    *native;
+    GdkSurface	    *surface;
+    GdkDisplay	    *display;
+    GdkSeat	    *seat;
+    GdkDevice	    *pointer;
+    double	     sx, sy, nx, ny;
+    graphene_point_t src, dst;
+
+    if (gui.drawarea == NULL)
+	return FALSE;
+    native = gtk_widget_get_native(gui.drawarea);
+    if (native == NULL)
+	return FALSE;
+    surface = gtk_native_get_surface(native);
+    if (surface == NULL)
+	return FALSE;
+    display = gtk_widget_get_display(gui.drawarea);
+    if (display == NULL)
+	return FALSE;
+    seat = gdk_display_get_default_seat(display);
+    if (seat == NULL)
+	return FALSE;
+    pointer = gdk_seat_get_pointer(seat);
+    if (pointer == NULL)
+	return FALSE;
+
+    if (!gdk_surface_get_device_position(surface, pointer, &sx, &sy, NULL))
+	return FALSE;
+
+    gtk_native_get_surface_transform(native, &nx, &ny);
+    src.x = (float)(sx - nx);
+    src.y = (float)(sy - ny);
+    if (!gtk_widget_compute_point(GTK_WIDGET(native), gui.drawarea,
+		&src, &dst))
+	return FALSE;
+
+    *x = (int)dst.x;
+    *y = (int)dst.y;
+    return TRUE;
+}
+
     void
 gui_mch_getmouse(int *x, int *y)
 {
-    *x = 0;
-    *y = 0;
-    // GTK4: No reliable way to query pointer position synchronously.
+    if (!query_pointer_pos(x, y))
+    {
+	*x = 0;
+	*y = 0;
+    }
 }
 
     void
@@ -2322,7 +2460,7 @@ gui_mch_update_tabline(void)
 	    gtk_box_append(GTK_BOX(event_box), label);
 	    gtk_widget_set_visible(label, TRUE);
 	    gtk_notebook_insert_page(GTK_NOTEBOOK(gui.tabline),
-		    page, event_box, nr++);
+		    page, event_box, nr);
 	    gtk_notebook_set_tab_reorderable(GTK_NOTEBOOK(gui.tabline),
 		    page, TRUE);
 	}
@@ -3130,6 +3268,8 @@ clip_mch_request_selection(Clipboard_T *cbd)
 	g_main_context_iteration(NULL, TRUE);
 }
 
+static int in_clipboard_set = FALSE;
+
 /*
  * Send the current selection to the clipboard.
  */
@@ -3174,12 +3314,26 @@ clip_mch_set_selection(Clipboard_T *cbd)
 	{
 	    mch_memmove(nul_str, str, len);
 	    nul_str[len] = NUL;
+	    in_clipboard_set = TRUE;
 	    gdk_clipboard_set_text(clipboard, (const char *)nul_str);
+	    in_clipboard_set = FALSE;
 	    vim_free(nul_str);
 	}
     }
 
     vim_free(str);
+}
+
+    static void
+clipboard_changed_cb(GdkClipboard *clipboard, gpointer user_data)
+{
+    Clipboard_T *cbd = (Clipboard_T *)user_data;
+
+    if (in_clipboard_set)
+	return;
+    if (gdk_clipboard_is_local(clipboard))
+	return;
+    clip_lose_selection(cbd);
 }
 
 /*
@@ -3205,8 +3359,12 @@ clip_mch_lose_selection(Clipboard_T *cbd)
     if (clipboard == NULL)
 	return;
 
-    // Setting NULL content provider releases ownership.
-    gdk_clipboard_set_content(clipboard, NULL);
+    // Only release ownership if we still own it.  Otherwise we would
+    // clobber another application's clipboard content with NULL, which
+    // happens when this is called from clipboard_changed_cb after a
+    // foreign app took the selection.
+    if (gdk_clipboard_is_local(clipboard))
+	gdk_clipboard_set_content(clipboard, NULL);
 }
 
 // Balloon eval - use GTK4 tooltip
@@ -3649,20 +3807,128 @@ gui_mch_destroy_menu(vimmenu_T *menu)
 popupmenu_closed_cb(GtkPopover *popover, gpointer data UNUSED)
 {
     gtk_widget_unparent(GTK_WIDGET(popover));
+    if (gui.drawarea != NULL)
+	gtk_widget_queue_draw(gui.drawarea);
+}
+
+typedef struct {
+    GtkPopover *popover;
+    vimmenu_T  *menu;
+} popup_item_data_T;
+
+    static void
+popup_item_clicked_cb(GtkButton *button UNUSED, gpointer data)
+{
+    popup_item_data_T *d = data;
+
+    if (d->popover != NULL)
+	gtk_popover_popdown(d->popover);
+    if (d->menu != NULL)
+    {
+	gui_menu_cb(d->menu);
+	gui_mch_flush();
+    }
+}
+
+    static void
+popup_item_data_free(gpointer data, GClosure *closure UNUSED)
+{
+    g_free(data);
 }
 
     void
 gui_mch_show_popupmenu(vimmenu_T *menu)
 {
-    GMenu *gmenu;
-    GtkWidget *popover;
+    GtkWidget	    *popover;
+    GtkWidget	    *box;
+    GtkWidget	    *parent;
+    GdkRectangle    rect;
+    vimmenu_T	    *child;
+    int		    mode;
+    int		    natural_width = 0;
 
-    if (menu == NULL || menu->submenu_id == NULL)
+    if (menu == NULL || menu->children == NULL)
 	return;
 
-    gmenu = (GMenu *)(gpointer)menu->submenu_id;
-    popover = gtk_popover_menu_new_from_model(G_MENU_MODEL(gmenu));
-    gtk_widget_set_parent(popover, gui.drawarea);
+    // Attach the popover to drawarea's parent (the GtkOverlay) rather than
+    // to drawarea itself. GtkDrawingArea is a leaf widget whose snapshot
+    // does not iterate children, and parenting a popover to it has been
+    // observed to leave the drawing area blank while the popover is open.
+    parent = gtk_widget_get_parent(gui.drawarea);
+    if (parent == NULL)
+	parent = gui.drawarea;
+
+    // Build the popover by hand instead of using gtk_popover_menu_new_from_model.
+    // GtkPopoverMenu relies on the "menu.<name>" action-group lookup walking up
+    // the parent chain, which has been observed to silently fail on some
+    // compositors when the popover is parented via gtk_widget_set_parent. Wiring
+    // each menu item to a plain "clicked" signal sidesteps that entirely.
+    popover = gtk_popover_new();
+    gtk_widget_set_parent(popover, parent);
+    gtk_popover_set_has_arrow(GTK_POPOVER(popover), FALSE);
+    gtk_popover_set_position(GTK_POPOVER(popover), GTK_POS_BOTTOM);
+    gtk_widget_add_css_class(popover, "menu");
+
+    box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_popover_set_child(GTK_POPOVER(popover), box);
+
+    mode = get_menu_mode_flag();
+
+    for (child = menu->children; child != NULL; child = child->next)
+    {
+	GtkWidget	    *item;
+	char_u		    *label;
+	popup_item_data_T   *cb_data;
+
+	if (menu_is_separator(child->name))
+	{
+	    item = gtk_separator_new(GTK_ORIENTATION_HORIZONTAL);
+	    gtk_box_append(GTK_BOX(box), item);
+	    continue;
+	}
+
+	label = CONVERT_TO_UTF8(child->dname);
+	item = gtk_button_new_with_mnemonic(
+		label != NULL ? (const char *)label : "");
+	CONVERT_TO_UTF8_FREE(label);
+
+	gtk_widget_add_css_class(item, "flat");
+	gtk_widget_add_css_class(item, "model");
+	gtk_button_set_has_frame(GTK_BUTTON(item), FALSE);
+	gtk_widget_set_halign(item, GTK_ALIGN_FILL);
+	{
+	    GtkWidget *btn_label = gtk_button_get_child(GTK_BUTTON(item));
+	    if (GTK_IS_LABEL(btn_label))
+		gtk_label_set_xalign(GTK_LABEL(btn_label), 0.0);
+	}
+
+	if (!(child->modes & child->enabled & mode))
+	    gtk_widget_set_sensitive(item, FALSE);
+
+	cb_data = g_new0(popup_item_data_T, 1);
+	cb_data->popover = GTK_POPOVER(popover);
+	cb_data->menu = child;
+	g_signal_connect_data(item, "clicked",
+		G_CALLBACK(popup_item_clicked_cb),
+		cb_data, popup_item_data_free, 0);
+
+	gtk_box_append(GTK_BOX(box), item);
+    }
+
+    if (!query_pointer_pos(&rect.x, &rect.y))
+    {
+	rect.x = 0;
+	rect.y = 0;
+    }
+    // GtkPopover with GTK_POS_BOTTOM centres horizontally on the pointing-to
+    // rectangle. Use the box's natural width so the popover's left edge ends
+    // up at the cursor (down-and-to-the-right of the pointer).
+    gtk_widget_measure(box, GTK_ORIENTATION_HORIZONTAL, -1,
+	    NULL, &natural_width, NULL, NULL);
+    rect.width = natural_width > 0 ? natural_width : 1;
+    rect.height = 1;
+    gtk_popover_set_pointing_to(GTK_POPOVER(popover), &rect);
+
     g_signal_connect(popover, "closed",
 	    G_CALLBACK(popupmenu_closed_cb), NULL);
     gtk_popover_popup(GTK_POPOVER(popover));
@@ -3792,21 +4058,11 @@ gui_mch_set_text_area_pos(int x, int y, int w, int h)
     // form_size_allocate which gives drawarea the formwin's full size.
     gui_gtk_form_move(GTK_FORM(gui.formwin), gui.drawarea, x, y);
 
-    // Update surface to match new text area size
-    if (w > 0 && h > 0)
-    {
-	int scale = get_drawarea_scale();
-
-	if (gui.surface != NULL)
-	{
-	    int sw = cairo_image_surface_get_width(gui.surface) / scale;
-	    int sh = cairo_image_surface_get_height(gui.surface) / scale;
-	    if (sw == w && sh == h)
-		return;
-	    cairo_surface_destroy(gui.surface);
-	}
-	gui.surface = create_backing_surface(w, h);
-    }
+    // Surface sizing is owned by drawarea_resize_cb; don't recreate it
+    // here. Recreating on every text-area change wiped any preserved
+    // content whenever a sub-cell resize shifted the cell grid, and
+    // update_screen() may bail (char_avail()) during a drag and leave
+    // the fresh surface blank.
 }
 
 /*

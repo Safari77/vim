@@ -1591,6 +1591,7 @@ $quote	eval.txt	/*$quote*
 --clean	starting.txt	/*--clean*
 --clientserver	remote.txt	/*--clientserver*
 --cmd	starting.txt	/*--cmd*
+--display	starting.txt	/*--display*
 --echo-wid	starting.txt	/*--echo-wid*
 --gui-dialog-file	starting.txt	/*--gui-dialog-file*
 --help	starting.txt	/*--help*
@@ -4776,6 +4777,7 @@ E1574	channel.txt	/*E1574*
 E1575	builtin.txt	/*E1575*
 E1576	tagsrch.txt	/*E1576*
 E1577	options.txt	/*E1577*
+E1578	spell.txt	/*E1578*
 E158	sign.txt	/*E158*
 E159	sign.txt	/*E159*
 E16	cmdline.txt	/*E16*
@@ -6234,7 +6236,6 @@ after-directory	options.txt	/*after-directory*
 aleph	options.txt	/*aleph*
 algol68	syntax.txt	/*algol68*
 algol68_no_preludes	syntax.txt	/*algol68_no_preludes*
-algol68_symbolic_operators	syntax.txt	/*algol68_symbolic_operators*
 alt	intro.txt	/*alt*
 alt-input	debugger.txt	/*alt-input*
 alternate-file	editing.txt	/*alternate-file*
@@ -7744,6 +7745,7 @@ ft_hare.txt	ft_hare.txt	/*ft_hare.txt*
 ft_mp.txt	ft_mp.txt	/*ft_mp.txt*
 ft_ps1.txt	ft_ps1.txt	/*ft_ps1.txt*
 ft_raku.txt	ft_raku.txt	/*ft_raku.txt*
+ft_recommended_style	usr_51.txt	/*ft_recommended_style*
 ft_rust.txt	ft_rust.txt	/*ft_rust.txt*
 ft_sql.txt	ft_sql.txt	/*ft_sql.txt*
 ftdetect	filetype.txt	/*ftdetect*
@@ -8256,6 +8258,7 @@ gui-font	gui.txt	/*gui-font*
 gui-fontwide	gui.txt	/*gui-fontwide*
 gui-footer	debugger.txt	/*gui-footer*
 gui-fork	gui_x11.txt	/*gui-fork*
+gui-fullscreen	gui.txt	/*gui-fullscreen*
 gui-functions	usr_41.txt	/*gui-functions*
 gui-gnome	gui_x11.txt	/*gui-gnome*
 gui-gnome-session	gui_x11.txt	/*gui-gnome-session*
@@ -8285,7 +8288,6 @@ gui-vert-scroll	gui.txt	/*gui-vert-scroll*
 gui-w32	gui_w32.txt	/*gui-w32*
 gui-w32-cmdargs	gui_w32.txt	/*gui-w32-cmdargs*
 gui-w32-dialogs	gui_w32.txt	/*gui-w32-dialogs*
-gui-w32-fullscreen	gui_w32.txt	/*gui-w32-fullscreen*
 gui-w32-printing	gui_w32.txt	/*gui-w32-printing*
 gui-w32-start	gui_w32.txt	/*gui-w32-start*
 gui-w32-title-bar	gui_w32.txt	/*gui-w32-title-bar*
@@ -10560,6 +10562,7 @@ static-tag	tagsrch.txt	/*static-tag*
 status-line	windows.txt	/*status-line*
 statusmsg-variable	eval.txt	/*statusmsg-variable*
 stl-%!	options.txt	/*stl-%!*
+stl-%0{	options.txt	/*stl-%0{*
 stl-%@	options.txt	/*stl-%@*
 stl-%[FuncName]	options.txt	/*stl-%[FuncName]*
 stl-%{	options.txt	/*stl-%{*
