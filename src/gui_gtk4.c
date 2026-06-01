@@ -816,6 +816,28 @@ gui_mch_settitle(char_u *title, char_u *icon UNUSED)
 
 static int in_set_shellsize = FALSE;
 
+/*
+ * Get height of window decorations, that we cannot determine directly. For
+ * example, the GtkHeaderBar widget. This is called in gui_resize_shell(), we
+ * cannot call it in gui_set_shellsize(), because that may be called before the
+ * drawarea/formwin is resized, which may cause the drawarea to be bigger than
+ * it actually is (while the window size is up to date), causing a negative
+ * "decor_height".
+ */
+    void
+gui_gtk_init_decor_height(void)
+{
+    int h = gtk_widget_get_height(gui.mainwin);
+
+    if (h == 0)
+	return;
+
+    h -= get_menu_tool_height();
+    h -= gtk_widget_get_height(gui.formwin);
+
+    gui.decor_height = h;
+}
+
     void
 gui_mch_set_shellsize(int width, int height,
 	int min_width UNUSED, int min_height UNUSED,
@@ -824,6 +846,11 @@ gui_mch_set_shellsize(int width, int height,
 {
     width += get_menu_tool_width();
     height += get_menu_tool_height();
+
+    // GtkWindow default size also includes client side decorations, so must
+    // include it also.
+    height += gui.decor_height;
+
     gtk_window_set_default_size(GTK_WINDOW(gui.mainwin), width, height);
 }
 
@@ -3240,24 +3267,45 @@ get_menu_tool_width(void)
     int
 get_menu_tool_height(void)
 {
-    int height = 0;
-
+    GtkWidget *widgets[] = {
 #ifdef FEAT_MENU
-    if (gui.menubar != NULL && gtk_widget_get_visible(gui.menubar))
-    {
-	GtkRequisition req;
-	gtk_widget_get_preferred_size(gui.menubar, &req, NULL);
-	height += req.height;
-    }
+	gui.menubar,
 #endif
 #ifdef FEAT_TOOLBAR
-    if (gui.toolbar != NULL && gtk_widget_get_visible(gui.toolbar))
-    {
-	GtkRequisition req;
-	gtk_widget_get_preferred_size(gui.toolbar, &req, NULL);
-	height += req.height;
-    }
+	gui.toolbar,
 #endif
+#ifdef FEAT_GUI_TABLINE
+	gui.tabline
+#endif
+    };
+
+    int height = 0;
+
+    for (int i = 0; i < ARRAY_LENGTH(widgets); i++)
+    {
+	GtkRequisition	min;
+	GtkRequisition	nat;
+	int		h;
+
+	if (widgets[i] == NULL || !gtk_widget_get_visible(widgets[i]))
+	    continue;
+
+	h = gtk_widget_get_height(widgets[i]);
+
+	if (h == 0)
+	{
+	    // Allocation hasn't been updated yet (widget just became visible).
+	    // Query the preferred height so the caller gets a valid value
+	    // before the layout pass runs.  Use the maximum of minimum and
+	    // natural height: GTK may allocate min_h even when natural_h is
+	    // smaller (e.g. GtkNotebook tab bar has min_h > natural_h due to
+	    // CSS).
+	    gtk_widget_get_preferred_size(widgets[i], &min, &nat);
+	    height += MAX(min.height, nat.height);
+	}
+	else
+	    height += h;
+    }
     return height;
 }
 
@@ -3871,29 +3919,103 @@ gui_mch_menu_set_tip(vimmenu_T *menu UNUSED)
 {
 }
 
+/*
+ * Return TRUE if "menu" has a corresponding entry in its parent's GMenu.
+ * Popup menus, toolbar children and orphaned submenus do not.
+ */
+    static int
+menu_has_gmenu_slot(vimmenu_T *menu)
+{
+    if (menu == NULL || menu->name == NULL)
+	return FALSE;
+    if (menu->name[0] == ']' || menu_is_popup(menu->name))
+	return FALSE;
+    if (menu->parent != NULL)
+    {
+	if (menu_is_toolbar(menu->parent->name))
+	    return FALSE;
+	if (menu->parent->submenu_id == NULL)
+	    return FALSE;
+	return TRUE;
+    }
+    return menu_is_menubar(menu->name);
+}
+
+/*
+ * Find the parent GMenu containing the entry for "menu" and the position of
+ * that entry.  Returns TRUE on success.
+ */
+    static int
+get_gmenu_pos_in_parent(vimmenu_T *menu, GMenu **parent_out, int *pos_out)
+{
+    GMenu	*parent_gmenu;
+    vimmenu_T	*first_sibling;
+    vimmenu_T	*sib;
+    int		pos = 0;
+
+    if (!menu_has_gmenu_slot(menu))
+	return FALSE;
+
+    if (menu->parent != NULL)
+    {
+	parent_gmenu = (GMenu *)(gpointer)menu->parent->submenu_id;
+	first_sibling = menu->parent->children;
+    }
+    else
+    {
+	if (gui.menubar == NULL)
+	    return FALSE;
+	parent_gmenu = (GMenu *)(gpointer)g_object_get_data(
+		G_OBJECT(gui.menubar), "vim-gmenu");
+	first_sibling = root_menu;
+    }
+    if (parent_gmenu == NULL)
+	return FALSE;
+
+    for (sib = first_sibling; sib != NULL && sib != menu; sib = sib->next)
+	if (menu_has_gmenu_slot(sib))
+	    pos++;
+    if (sib != menu)
+	return FALSE;
+
+    *parent_out = parent_gmenu;
+    *pos_out = pos;
+    return TRUE;
+}
+
     void
 gui_mch_destroy_menu(vimmenu_T *menu)
 {
-    // For toolbar buttons, remove from toolbar
+    GMenu	*parent_gmenu = NULL;
+    int		pos = 0;
+
+    // For toolbar buttons and separators, remove from the toolbar box.
     if (menu->id != NULL && menu->id != (GtkWidget *)1)
     {
 	GtkWidget *parent_widget = gtk_widget_get_parent(menu->id);
+
 	if (parent_widget != NULL)
 	    gtk_box_remove(GTK_BOX(parent_widget), menu->id);
-	menu->id = NULL;
     }
-    else
-	menu->id = NULL;
+    menu->id = NULL;
 
-    // Free stored action name
-    vim_free(menu->label);
-    menu->label = NULL;
+    // Remove the entry from the parent GMenu so the visible menu updates.
+    if (get_gmenu_pos_in_parent(menu, &parent_gmenu, &pos))
+	g_menu_remove(parent_gmenu, pos);
 
-    // GMenu items cannot be individually removed easily.
-    // The submenu GMenu is unreffed if present.
+    // Remove the GAction created for this item and free its name.
+    if (menu->label != NULL)
+    {
+	if (menu_action_group != NULL)
+	    g_action_map_remove_action(G_ACTION_MAP(menu_action_group),
+		    (const char *)menu->label);
+	VIM_CLEAR(menu->label);
+    }
+
+    // Release our reference on the submenu GMenu (if any).
     if (menu->submenu_id != NULL)
     {
-	// Don't unref - GMenu may be referenced by the model
+	g_object_unref(menu->submenu_id);
 	menu->submenu_id = NULL;
     }
 }
