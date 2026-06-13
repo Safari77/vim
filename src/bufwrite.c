@@ -676,7 +676,7 @@ buf_write(
     int		    reset_changed,
     int		    filtering)
 {
-    int		    fd;
+    int		    fd = -1;
     char_u	    *backup = NULL;
     int		    backup_copy = FALSE; // copy the original file?
     int		    dobackup;
