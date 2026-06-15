@@ -2076,8 +2076,9 @@ popup_image_composites_frames(void)
 	// The surface is composed off-screen before it is exposed, so the
 	// repaint cannot flicker there.
 	return true;
-#  else
-	// GDI blits with SRCCOPY: a full replace, no residue.
+#  elif defined(FEAT_IMAGE_GDI) || defined(FEAT_IMAGE_GDK)
+	// GDI blits with SRCCOPY: a full replace, no residue. GDK uses retained
+	// render nodes, so there is no blitting in the first place.
 	return false;
 #  endif
 # endif
@@ -2090,42 +2091,6 @@ popup_image_composites_frames(void)
     return false;
 # endif
 }
-
-# if defined(FEAT_IMAGE_SIXEL) || defined(FEAT_IMAGE_KITTY)
-// TRUE while a DEC synchronized-update block (DECSET 2026) is open around
-// a popup image residue clear + re-emit.
-static int popup_sync_update_open = FALSE;
-
-/*
- * Begin a synchronized update before the cells under a popup image are
- * repainted for an RGBA frame swap.  Without it the terminal can render
- * the freshly painted background cells before the new sixel frame
- * arrives, making the animation flicker.  Terminals that do not support
- * mode 2026 ignore it.
- */
-    static void
-popup_sync_update_start(void)
-{
-    if (popup_sync_update_open)
-	return;
-#  ifdef FEAT_GUI
-    if (gui.in_use)
-	return;
-#  endif
-    out_str((char_u *)"\033[?2026h");
-    popup_sync_update_open = TRUE;
-}
-
-    static void
-popup_sync_update_end(void)
-{
-    if (!popup_sync_update_open)
-	return;
-    out_str((char_u *)"\033[?2026l");
-    out_flush();
-    popup_sync_update_open = FALSE;
-}
-# endif
 #endif
 
 // Snapshot of the popup window geometry that update_popups() temporarily
@@ -6905,7 +6870,7 @@ popup_invalidate_prev_image_rect(win_T *wp, popup_clip_T *cl)
 	// synchronized updates, so the background never shows through
 	// between animation frames.  Closed right after this popup's
 	// image is re-emitted in update_popups().
-	popup_sync_update_start();
+	term_set_sync_output(TERM_SYNC_OUTPUT_ENABLE);
 #  endif
     }
 
@@ -7147,7 +7112,8 @@ popup_images_invalidate(void)
  * here would instead paint a lower zindex image over the cells of a
  * higher zindex popup drawn on top of it.
  */
-# if defined(FEAT_IMAGE_GDI) || defined(FEAT_IMAGE_CAIRO)
+# if defined(FEAT_IMAGE_GDI) || defined(FEAT_IMAGE_CAIRO) \
+    || defined(FEAT_IMAGE_GDK)
     void
 update_popup_images(void)
 {
@@ -7839,7 +7805,7 @@ update_popups(void (*win_update)(win_T *wp))
 # if defined(FEAT_IMAGE_SIXEL) || defined(FEAT_IMAGE_KITTY)
 	    // Close the synchronized-update block a residue clear for this
 	    // popup may have opened in popup_invalidate_prev_image_rect().
-	    popup_sync_update_end();
+	    term_set_sync_output(TERM_SYNC_OUTPUT_DISABLE);
 # endif
 	}
 #endif
