@@ -601,7 +601,7 @@ CClink = $(CC)
 # (the compiler default with -O) the buffer overflow check aborts Vim on the
 # "x[1] but actually longer" struct-hack arrays (e.g. dictitem di_key).
 # configure adds this automatically; these examples bypass it.
-FORTIFY_CFLAGS = -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=1
+FORTIFY_CFLAGS = -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=3
 
 # Often used for GCC: mixed optimizing, lot of optimizing, debugging
 #CFLAGS = -g -O2 -fno-strength-reduce -Wall -Wshadow -Wmissing-prototypes $(FORTIFY_CFLAGS)
