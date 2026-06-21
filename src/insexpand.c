@@ -1072,7 +1072,7 @@ ins_compl_equal_sc(compl_T *match, char_u *str, int len)
     for (int i = 0; i < len; ++i)
     {
 	if (i >= typed && i < longest_end
-		? MB_TOLOWER(match->cp_str.string[i]) != MB_TOLOWER(str[i])
+		? TOLOWER_LOC(match->cp_str.string[i]) != TOLOWER_LOC(str[i])
 		: match->cp_str.string[i] != str[i])
 	    return FALSE;
     }
@@ -3878,7 +3878,7 @@ set_completion(colnr_T startcol, list_T *list)
     int compl_no_select = (cur_cot_flags & COT_NOSELECT) != 0;
 
     // If already doing completions stop it.
-    if (ctrl_x_mode_not_default())
+    if (compl_started || ctrl_x_mode_not_default())
 	ins_compl_prep(' ');
     ins_compl_clear();
     ins_compl_free();

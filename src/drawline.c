@@ -2875,8 +2875,11 @@ win_line(
 #ifdef FEAT_TERMINAL
 		if (term_show_buffer(wp->w_buffer)
 		    && wlv.vcol == 0
-		    && wlv.win_attr == term_get_attr(wp, lnum, -1))
-		    // reset highlighting attribute
+		    && wlv.win_attr == term_get_attr(wp, lnum, -1)
+		    && wlv.win_attr == term_get_default_attr(wp))
+		    // Reset the attribute for an empty line with the
+		    // default background, so a Visual selection shows;
+		    // keep an explicitly set background color.
 		    wlv.win_attr = 0;
 #endif
 	    }
@@ -3693,6 +3696,17 @@ win_line(
 			else if (wlv.line_attr)
 			    wlv.char_attr = hl_combine_attr(
 						 wlv.char_attr, wlv.line_attr);
+			// Show a Visual or search highlight on the first cell
+			// of an empty line, on top of the background color.
+			if (wlv.vcol == 0)
+			{
+			    if (area_attr != 0)
+				wlv.char_attr = hl_combine_attr(
+						     wlv.char_attr, area_attr);
+			    else if (search_attr != 0)
+				wlv.char_attr = hl_combine_attr(
+						   wlv.char_attr, search_attr);
+			}
 		    }
 # endif
 		}
