@@ -683,7 +683,7 @@ func Test_popup_drag_termwin()
 	set shell=/bin/sh noruler
 	unlet $PROMPT_COMMAND
 	let $PS1 = 'vim> '
-        terminal ++rows=4
+	terminal ++rows=4
 	$wincmd w
 	let winid = popup_create(['1111', '2222'], #{
 	      \ drag: 1,
@@ -2331,6 +2331,20 @@ func Test_popup_moved()
   call assert_equal({}, popup_getpos(winid))
   call popup_clear()
 
+  " On white space find_ident_under_cursor() skips forward to the next word,
+  " whose range does not cover the cursor.  The cursor column must be used so
+  " the popup is not closed right away.
+  exe "normal gg4|"
+  let winid = popup_atcursor('text', {})
+  redraw
+  call assert_equal(1, popup_getpos(winid).visible)
+  call assert_equal([1, 3, 3], popup_getoptions(winid).moved)
+  call feedkeys("i\<Esc>", 'xt')
+  call assert_equal(1, popup_getpos(winid).visible)
+  call feedkeys("$i\<Esc>", 'xt')
+  call assert_equal({}, popup_getpos(winid))
+  call popup_clear()
+
   bwipe!
   call test_override('ALL', 0)
 endfunc
@@ -3017,18 +3031,18 @@ func Test_popupwin_terminal_buffer()
   " open help window to test that :help below fails
   help
 
-  let termbuf = term_start(&shell, #{hidden: 1})
+  let env =  {'HOME': '/nonexisting', 'PS1':''}
+  let termbuf = term_start(&shell, #{hidden: 1, env: env})
   let winid = popup_create(termbuf, #{minwidth: 40, minheight: 10, border: []})
   " Wait for shell to start
   call WaitForAssert({-> assert_equal("run", job_status(term_getjob(termbuf)))})
-  " Wait for a prompt (see border char first, then space after prompt)
-  call WaitForAssert({ -> assert_equal(' ', screenstring(screenrow(), screencol() - 1))})
+  call WaitForAssert({-> assert_equal('', term_getline(termbuf, '.'))})
 
   " When typing a character, the cursor is after it.
   call feedkeys("x", 'xt')
   call term_wait(termbuf)
   redraw
-  call WaitForAssert({ -> assert_equal('x', screenstring(screenrow(), screencol() - 1))})
+  call WaitForAssert({-> assert_equal('x', term_getline(termbuf, '.'))})
   call feedkeys("\<BS>", 'xt')
 
   " Check this doesn't crash
@@ -5307,18 +5321,19 @@ func Test_popup_opacity_terminal_no_freeze()
   let g:test_is_flaky = 1
 
   let origwin = win_getid()
-  let termbuf = term_start(&shell, #{hidden: 1})
+  let env =  {'HOME': '/nonexisting', 'PS1':''}
+  let termbuf = term_start(&shell, #{hidden: 1, env: env})
   let winid = popup_create(termbuf, #{minwidth: 40, minheight: 10,
         \ border: [1, 1, 1, 1], opacity: 10})
   call WaitForAssert({-> assert_equal("run", job_status(term_getjob(termbuf)))})
-  call WaitForAssert({-> assert_equal(' ', screenstring(screenrow(), screencol() - 1))})
+  call WaitForAssert({-> assert_equal('', term_getline(termbuf, '.'))})
 
   " Before the fix typing froze Vim: redraw under an opacity popup raised
   " must_redraw every cycle, trapping terminal_loop in its redraw loop.
   call feedkeys('x', 'xt')
   call term_wait(termbuf)
   redraw
-  call WaitForAssert({-> assert_equal('x', screenstring(screenrow(), screencol() - 1))})
+  call WaitForAssert({-> assert_equal('x', term_getline(termbuf, '.'))})
 
   call feedkeys("\<BS>", 'xt')
   call feedkeys("exit\<CR>", 'xt')
