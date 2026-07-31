@@ -24,6 +24,23 @@
 # include <x11/xos_r.h>
 #endif
 
+/*
+ * copy_file_range() is a Linux system call.  Like renameat2() its libc wrapper
+ * is only declared with _GNU_SOURCE and only exists in glibc 2.27 and later, so
+ * call it through syscall(): that works with every libc.  When the system call
+ * number is unknown the plain read()/write() loop in copy_file_contents() is
+ * used instead.
+ */
+#if defined(__linux__)
+# include <sys/syscall.h>
+# ifdef SYS_copy_file_range
+#  define HAVE_COPY_FILE_RANGE
+#  define vim_copy_file_range(fdin, offin, fdout, offout, len, flags) \
+	((ssize_t)syscall(SYS_copy_file_range, (fdin), (offin), (fdout), \
+					      (offout), (len), (flags)))
+# endif
+#endif
+
 // Is there any system that doesn't have access()?
 #define USE_MCH_ACCESS
 
@@ -3131,22 +3148,123 @@ check_file_readonly(
 #if defined(HAVE_FSYNC)
 /*
  * Call fsync() with Mac-specific exception.
- * Return fsync() result: zero for success.
+ *
+ * Retries when interrupted by a signal, but never retries any other error: on
+ * Linux a failed fsync() may clear the writeback error state of the inode, so
+ * a second call could report success while the data was in fact lost.
+ *
+ * Errors that only mean "this file descriptor cannot be synced at all" (pipes,
+ * sockets, some devices and a few file systems) are reported as success, since
+ * nothing was lost.  EIO and ENOSPC are always reported as failure.
+ *
+ * Return zero for success.  On failure "errno" is left set for the caller.
  */
     int
 vim_fsync(int fd)
 {
-    int r;
+    int		r;
+    int		err;
 
 # ifdef MACOS_X
-    r = fcntl(fd, F_FULLFSYNC);
-    if (r != 0)  // F_FULLFSYNC not working or not supported
+    // On macOS fsync() only hands the data to the drive, it does not make the
+    // drive flush its own write cache.  F_FULLFSYNC does, but it is not
+    // supported by every file system.
+    do
+    {
+	r = fcntl(fd, F_FULLFSYNC);
+    } while (r != 0 && errno == EINTR);
+    if (r == 0)
+	return 0;
+    err = errno;
+    if (err != EINVAL && err != ENOTTY
+#  ifdef ENOTSUP
+	    && err != ENOTSUP
+#  endif
+#  ifdef EOPNOTSUPP
+	    && err != EOPNOTSUPP
+#  endif
+	    )
+	return -1;	// a real error, fsync() would fail as well
 # endif
-    do {
+
+    do
+    {
 	r = fsync(fd);
-    } while ((r == -1) && (errno == EINTR));
-    if ((r == -1)  && (errno == EINVAL)) return 0;
+    } while (r != 0 && errno == EINTR);
+    if (r == 0)
+	return 0;
+
+    err = errno;
+    if (err == EINVAL || err == EROFS
+# ifdef ENOSYS
+	    || err == ENOSYS
+# endif
+# ifdef ENOTSUP
+	    || err == ENOTSUP
+# endif
+# ifdef EOPNOTSUPP
+	    || err == EOPNOTSUPP
+# endif
+	    )
+	return 0;	// this kind of file simply cannot be synced
+
+    errno = err;
+    return -1;
+}
+#endif
+
+#if defined(UNIX) || defined(PROTO)
+/*
+ * Sync the directory that contains "fname".
+ *
+ * Renaming a file into place is only guaranteed to survive a crash after the
+ * directory entry itself has reached stable storage.  Without this a file that
+ * was written with the write-to-temp-file-and-rename method can still show up
+ * with its old contents (or not at all) after a power failure.
+ *
+ * Return zero for success, -1 for failure.  Failing is not fatal: the file
+ * contents were already synced, only the rename may be lost.
+ */
+    int
+vim_fsync_dir(char_u *fname)
+{
+# ifdef HAVE_FSYNC
+    char_u	dirname[MAXPATHL + 1];
+    char_u	*tail;
+    size_t	len;
+    int		fd;
+    int		r;
+
+    tail = gettail(fname);
+    len = (size_t)(tail - fname);
+    if (len == 0)
+	STRCPY(dirname, ".");
+    else
+    {
+	if (len >= sizeof(dirname))
+	    return -1;
+	vim_strncpy(dirname, fname, len);
+	// Drop the trailing path separator, but keep it for the root
+	// directory.
+	if (len > 1 && after_pathsep(dirname, dirname + len))
+	    dirname[len - 1] = NUL;
+	if (*dirname == NUL)
+	    STRCPY(dirname, ".");
+    }
+
+    fd = mch_open((char *)dirname, O_RDONLY | O_EXTRA
+#  ifdef O_DIRECTORY
+	    | O_DIRECTORY
+#  endif
+	    , 0);
+    if (fd < 0)
+	return -1;
+    r = vim_fsync(fd);
+    close(fd);
     return r;
+# else
+    return 0;
+# endif
 }
 #endif
 
@@ -3835,6 +3953,7 @@ buf_modname(
 vim_fgets(char_u *buf, int size, FILE *fp)
 {
     char	*eof;
+    char	*rest;
 #define FGETS_SIZE 200
     char	tbuf[FGETS_SIZE];
 
@@ -3852,12 +3971,15 @@ vim_fgets(char_u *buf, int size, FILE *fp)
     {
 	buf[size - 1] = NUL;	    // Truncate the line
 
-	// Now throw away the rest of the line:
+	// Now throw away the rest of the line.  Do not touch "eof": the line
+	// that was returned above is valid, hitting end-of-file while dropping
+	// the remainder must not turn this call into "nothing was read".
 	do
 	{
 	    tbuf[FGETS_SIZE - 2] = NUL;
-	    vim_ignoredp = fgets((char *)tbuf, FGETS_SIZE, fp);
-	} while (tbuf[FGETS_SIZE - 2] != NUL && tbuf[FGETS_SIZE - 2] != '\n');
+	    rest = fgets((char *)tbuf, FGETS_SIZE, fp);
+	} while (rest != NULL && tbuf[FGETS_SIZE - 2] != NUL
+					    && tbuf[FGETS_SIZE - 2] != '\n');
     }
     return (eof == NULL);
 }
@@ -4013,184 +4135,270 @@ vim_rename(char_u *from, char_u *to)
     return 0;
 }
 
-/* Copy the regular file open on SRC_FD to DST_FD, using a buffer for temporary
-   storage. Copy no more than MAX_N_READ bytes. Set *TOTAL_N_READ to the number
-   of bytes read. Return true upon successful completion; print a diagnostic
-   and return false upon error.  */
-static bool portable_copy_file(int src_fd, int dest_fd, intmax_t max_n_read, intmax_t *total_n_read)
+/*
+ * Copy everything from the file open on "src_fd" to the file open on
+ * "dest_fd", starting at the current file positions and reading until end of
+ * file.  The source size is deliberately not used as a limit: files can grow
+ * or shrink while they are being copied, and some files (e.g. in /proc) report
+ * a size of zero while still having contents.
+ *
+ * Uses copy_file_range() when available so that the file system can do a
+ * server side or reflink copy, and falls back to a read()/write() loop.
+ *
+ * Return OK for success, FAIL for failure.  On failure "errno" is left set.
+ */
+    static int
+copy_file_contents(int src_fd, int dest_fd)
 {
-    *total_n_read = 0;
-    char rwbuf[131072];
+    char_u	*rwbuf;
+    long	n_read;
+    int		retval = OK;
 
-#ifdef __linux__
-    // Try using copy_file_range on Linux first
-    while (max_n_read > 0)
+#ifdef HAVE_COPY_FILE_RANGE
+    // Let the kernel do the copying.  It may copy less than requested and it
+    // may not be supported at all; in both cases we simply continue with the
+    // read/write loop below.  Both file offsets are advanced by whatever was
+    // copied, so no data is skipped or duplicated.
+    for (;;)
     {
-        ssize_t n_copied = copy_file_range(src_fd, NULL, dest_fd, NULL,
-                                           MIN(max_n_read, INT_MAX), 0);
-        if (n_copied > 0)
-        {
-            max_n_read -= n_copied;
-            *total_n_read += n_copied;
-        }
-        else if (n_copied == 0)
-        {
-            break; // EOF
-        }
-        else
-        {
-            if (errno == EINTR)
-                continue;
+	ssize_t	n_copied = vim_copy_file_range(src_fd, NULL, dest_fd, NULL,
+					     (size_t)1024 * 1024 * 1024, 0);
 
-            if (errno == EIO || errno == ENOMEM || errno == ENOSPC || errno == EDQUOT) return false;
-            break; // Probably not supported
-        }
+	if (n_copied == 0)
+	    return OK;			// end of file, everything copied
+	if (n_copied < 0)
+	{
+	    if (errno == EINTR)
+		continue;
+	    // Not supported here, or a real error.  Do not decide which one it
+	    // is: the fall back loop below runs into the same error and
+	    // reports it.
+	    break;
+	}
     }
 #endif
 
-    // Read/write loop for non-Linux or when copy_file_range fails
-    while (max_n_read > 0)
+    rwbuf = alloc(WRITEBUFSIZE);
+    if (rwbuf == NULL)
     {
-        ssize_t n_read, n_write;
-
-        do
-        {
-            n_read = read(src_fd, rwbuf, MIN(max_n_read, sizeof(rwbuf)));
-        } while ((n_read == -1) && (errno == EINTR));
-        if (n_read == -1) return false;
-        if (n_read == 0) break;
-
-        do
-        {
-            n_write = write(dest_fd, rwbuf, n_read);
-        } while ((n_write == -1) && (errno == EINTR));
-        if (n_write <= 0) return false;
-
-        max_n_read -= n_read;
-        *total_n_read += n_read;
+	errno = ENOMEM;
+	return FAIL;
     }
 
-    return true;
+    for (;;)
+    {
+	n_read = read_eintr(src_fd, rwbuf, WRITEBUFSIZE);
+	if (n_read < 0)
+	{
+	    retval = FAIL;
+	    break;
+	}
+	if (n_read == 0)
+	    break;			// end of file
+
+	// write_eintr() keeps writing until everything was written, so a
+	// return value other than "n_read" really is an error.  A partial
+	// write must never be treated as success, that silently truncates the
+	// copy.
+	if (write_eintr(dest_fd, rwbuf, (size_t)n_read) != n_read)
+	{
+	    retval = FAIL;
+	    break;
+	}
+    }
+
+    vim_free(rwbuf);
+    return retval;
 }
 
 /*
- * Create the new file with same permissions as the original.
+ * Copy the file "from" to the file "to".
+ *
+ * The data is written to a temporary file next to "to" which is then renamed
+ * into place, so that "to" is either the old file or the complete new file,
+ * never a half written one.
+ *
+ * The mode of "from" is copied, including the setuid/setgid bits: callers that
+ * do not want those (a backup file, for instance) must clear them afterwards.
+ *
+ * When "silent" is TRUE no message is given, the caller reports the failure.
+ * That is used where a failure is not final, e.g. when the next entry of
+ * 'backupdir' is going to be tried.
+ *
+ * Return FAIL for failure, OK for success.
+ */
+    static int
+copy_file(char_u *from, char_u *to, int silent)
+{
+    int		fd_in = -1;
+    int		fd_out = -1;
+    int		len;
+    long	perm;
+    int		retval = FAIL;
+    int		tmp_created = FALSE;
+    char	tmpfn[MAXPATHL + 1];
+#ifdef HAVE_ACL
+    vim_acl_T	acl = NULL;	// ACL from original file
+#endif
+#ifdef HAVE_READLINK
+    stat_T	st;
+    char	linkbuf[MAXPATHL + 1];
+
+    if (mch_lstat((char *)from, &st) >= 0 && S_ISLNK(st.st_mode))
+    {
+	// "from" is a symbolic link: copy the link itself, not what it points
+	// to.  symlink() fails when the target name already exists, so remove
+	// it first.
+	len = (int)readlink((char *)from, linkbuf, MAXPATHL);
+	if (len <= 0)
+	{
+	    if (!silent)
+		semsg(_(e_error_reading_str), from);
+	    return FAIL;
+	}
+	linkbuf[len] = NUL;
+	mch_remove(to);
+	if (symlink(linkbuf, (char *)to) != 0)
+	{
+	    if (!silent)
+		semsg(_(e_error_writing_to_str), to);
+	    return FAIL;
+	}
+	return OK;
+    }
+#endif
+
+    // Renaming a file over a directory can never work; catch it here so that
+    // the caller gets a message that says what is actually wrong instead of a
+    // confusing EISDIR further down.
+    if (mch_isdir(to))
+    {
+	if (!silent)
+	    semsg(_(e_str_is_directory), to);
+	return FAIL;
+    }
+
+    perm = mch_getperm(from);
+    fd_in = mch_open((char *)from, O_RDONLY|O_EXTRA, 0);
+    if (fd_in == -1)
+    {
+	if (!silent)
+	    semsg(_(e_cant_open_file_str), from);
+	return FAIL;
+    }
+
+#ifdef HAVE_ACL
+    // For systems that support ACL: get the ACL from the original file.
+    acl = mch_get_acl(from);
+#endif
+
+    len = vim_snprintf(tmpfn, sizeof(tmpfn), "%s.tmp.XXXXXX", (char *)to);
+    if (len < 0 || (size_t)len >= sizeof(tmpfn))
+    {
+	if (!silent)
+	    semsg(_("E999: Name of temporary file for \"%s\" is too long"), to);
+	goto theend;
+    }
+
+    fd_out = mkstemp(tmpfn);
+    if (fd_out == -1)
+    {
+	if (!silent)
+	    semsg(_("E999: Cannot create temporary file for \"%s\""), to);
+	goto theend;
+    }
+    tmp_created = TRUE;
+
+    // mkstemp() creates the file with mode 0600 (further restricted by the
+    // umask), give the copy the mode of the original.  Note that fchmod()
+    // is not subject to the umask, which is what we want here: a copy should
+    // be exactly as accessible as the file it was copied from.
+    // Skip this when the mode could not be obtained, chmod'ing with -1 would
+    // set every bit including setuid, setgid and sticky.
+    if (perm >= 0 && fchmod(fd_out, (mode_t)(perm & 07777)) != 0)
+    {
+	if (!silent)
+	    semsg(_("E999: Cannot set permissions of \"%s\""), to);
+	goto theend;
+    }
+
+    if (copy_file_contents(fd_in, fd_out) == FAIL)
+    {
+	if (!silent)
+	    semsg(_(e_error_writing_to_str), to);
+	goto theend;
+    }
+
+#ifndef UNIX	    // for Unix fchmod() above already set the permission
+    mch_setperm((char_u *)tmpfn, perm);
+#endif
+#ifdef HAVE_ACL
+    mch_set_acl((char_u *)tmpfn, acl);
+#endif
+#if defined(HAVE_SELINUX) || defined(HAVE_SMACK)
+    mch_copy_sec(from, (char_u *)tmpfn);
+#endif
+#ifdef FEAT_XATTR
+    mch_copy_xattr(from, (char_u *)tmpfn);
+#endif
+
+    if (vim_fsync(fd_out) != 0)
+    {
+	if (!silent)
+	    semsg(_("E999: Error syncing \"%s\" to disk"), to);
+	goto theend;
+    }
+    if (close(fd_out) < 0)
+    {
+	fd_out = -1;		// already closed, do not close it again
+	if (!silent)
+	    semsg(_(e_error_closing_str), to);
+	goto theend;
+    }
+    fd_out = -1;
+
+    if (mch_rename(tmpfn, (char *)to) == -1)
+    {
+	if (!silent)
+	    semsg(_("E999: Cannot rename temporary file to \"%s\""), to);
+	goto theend;
+    }
+    tmp_created = FALSE;	// the temporary file is now "to"
+    retval = OK;
+
+theend:
+    if (fd_in >= 0)
+	close(fd_in);
+    if (fd_out >= 0)
+	close(fd_out);
+    if (tmp_created)
+	mch_remove((char_u *)tmpfn);
+#ifdef HAVE_ACL
+    mch_free_acl(acl);
+#endif
+    return retval;
+}
+
+/*
+ * Copy the file "from" to the file "to", giving a message when it fails.
  * Return FAIL for failure, OK for success.
  */
     int
 vim_copyfile(char_u *from, char_u *to)
 {
-    int		fd_in;
-    int		fd_out;
-    intmax_t	n, n_read;
-    char	*errmsg = NULL;
-    long	perm;
-    char	tmpfn[MAXPATHL + 1];
-#ifdef HAVE_ACL
-    vim_acl_T	acl;		// ACL from original file
-#endif
+    return copy_file(from, to, FALSE);
+}
 
-#ifdef HAVE_READLINK
-    int		ret;
-    int		len;
-    stat_T	st;
-    char	linkbuf[MAXPATHL + 1];
-
-    ret = mch_lstat((char *)from, &st);
-    if (ret >= 0 && S_ISLNK(st.st_mode))
-    {
-	ret = -1;
-
-	len = readlink((char *)from, linkbuf, MAXPATHL);
-	if (len > 0)
-	{
-	    linkbuf[len] = NUL;
-
-	    // Create link
-	    ret = symlink(linkbuf, (char *)to);
-	}
-
-	return ret == 0 ? OK : FAIL;
-    }
-#endif
-
-    perm = mch_getperm(from);
-#ifdef HAVE_ACL
-    // For systems that support ACL: get the ACL from the original file.
-    acl = mch_get_acl(from);
-#endif
-    fd_in = mch_open((char *)from, O_RDONLY|O_EXTRA, 0);
-    if (fd_in == -1)
-    {
-#ifdef HAVE_ACL
-	mch_free_acl(acl);
-#endif
-	return FAIL;
-    }
-
-    vim_snprintf(tmpfn, MAXPATHL - 1, "%s.tmp.XXXXXX", to);
-
-    // Create the new file with same permissions as the original.
-    fd_out = mkstemp(tmpfn);
-    if (fd_out == -1)
-    {
-	close(fd_in);
-#ifdef HAVE_ACL
-	mch_free_acl(acl);
-#endif
-	return FAIL;
-    }
-    fchmod(fd_out, perm);
-
-    if (fstat(fd_in, &st) == -1) {
-        close(fd_in);
-        close(fd_out);
-        mch_remove(tmpfn);
-#ifdef HAVE_ACL
-        mch_free_acl(acl);
-#endif
-        return FAIL;
-    }
-    n = st.st_size;
-
-    if (portable_copy_file(fd_in, fd_out, n, &n_read) == false) {
-	errmsg = _(e_error_writing_to_str);
-    }
-    close(fd_in);
-    if (n_read != n)
-    {
-	errmsg = _(e_error_reading_str);
-	to = from;
-    }
-#ifndef UNIX	    // for Unix mch_open() already set the permission
-    mch_setperm(tmpfn, perm);
-#endif
-#ifdef HAVE_ACL
-    mch_set_acl(tmpfn, acl);
-    mch_free_acl(acl);
-#endif
-#if defined(HAVE_SELINUX) || defined(HAVE_SMACK)
-    mch_copy_sec(from, tmpfn);
-#endif
-    if (vim_fsync(fd_out) != 0)
-    {
-       errmsg = _("E999: Error fsyncing \"%s\"");
-       close(fd_out);
-    } else {
-       if (close(fd_out) < 0)
-           errmsg = _(e_error_closing_str);
-    }
-    if (mch_rename(tmpfn, to) == -1) {
-       errmsg = _("E999: Error renaming \"%s\"");
-       mch_remove(tmpfn);
-    }
-
-    if (errmsg != NULL)
-    {
-	semsg(errmsg, to);
-	return FAIL;
-    }
-    return OK;
+/*
+ * Like vim_copyfile(), but without giving a message.  For callers that will
+ * try something else when the copy fails and only report when everything
+ * failed.
+ * Return FAIL for failure, OK for success.
+ */
+    int
+vim_copyfile_quiet(char_u *from, char_u *to)
+{
+    return copy_file(from, to, TRUE);
 }
 
 static int already_warned = FALSE;

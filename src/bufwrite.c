@@ -17,10 +17,6 @@
 # include <utime.h>		// for struct utimbuf
 #endif
 
-#ifndef _GNU_SOURCE
-#  define _GNU_SOURCE
-#endif
-
 /*
  * Structure to pass arguments from buf_write() to buf_write_bytes().
  */
@@ -48,33 +44,245 @@ struct bw_info
 };
 
 /*
- * rename() with flags.
- * Wraps renameat2() on Linux to support RENAME_EXCHANGE and RENAME_NOREPLACE.
- * Falls back to mch_rename() if flags are 0 or syscall fails/unsupported.
+ * renameat2() is a Linux system call.  Do not use the libc wrapper for it: it
+ * only exists in glibc 2.28 and later, and musl does not have it at all.  Relying
+ * on it would mean silently losing the atomic exchange depending on how Vim
+ * happened to be built.  Going through syscall() always works and needs
+ * nothing but the system call number.
+ *
+ * The RENAME_* values are part of the kernel ABI and never change.  They live
+ * in <linux/fs.h>, which cannot be included here because it clashes with other
+ * headers on several systems, so define what is missing.
  */
-int
-vim_rename2(char_u *from, char_u *to, unsigned int flags)
-{
-#if defined(__linux__) && defined(RENAME_EXCHANGE)
-    // Use renameat2 to support atomic exchange or noreplace
-    if (renameat2(AT_FDCWD, from, AT_FDCWD, to, flags) == 0)
-	return 0;
-
-    // If standard rename is requested, or renameat2 is not supported (ENOSYS)
-    // or flags are invalid, fall through to fallback.
-    // Note: If flags != 0 and renameat2 fails, we should NOT fallback to
-    // mch_rename (which ignores flags), unless the error suggests the syscall
-    // is missing entirely.
-    if (flags != 0 && errno != ENOSYS)
-	return -1;
-#elif defined(__linux__)
-#  warning renameat2 not supported
+#if defined(__linux__)
+# include <sys/syscall.h>
+# ifdef SYS_renameat2
+#  define HAVE_RENAMEAT2
+#  ifndef RENAME_EXCHANGE
+#   define RENAME_EXCHANGE	(1 << 1)
+#  endif
+#  define vim_renameat2(olddirfd, oldpath, newdirfd, newpath, flags) \
+	((int)syscall(SYS_renameat2, (olddirfd), (oldpath), (newdirfd), \
+					     (newpath), (unsigned int)(flags)))
+# endif
 #endif
 
-    if (flags != 0)
-	return -1; // Flags requested but not supported
-    return mch_rename((char *)from, (char *)to);
+/*
+ * Flag for vim_rename2() asking for the two names to be swapped atomically.
+ * Defined on every platform so that the call sites compile everywhere; where
+ * the system call is missing vim_rename2() just reports failure and the caller
+ * uses its fall back.
+ */
+#ifdef HAVE_RENAMEAT2
+# define VIM_RENAME_EXCHANGE	RENAME_EXCHANGE
+#else
+# define VIM_RENAME_EXCHANGE	0x2	// never reaches the kernel
+#endif
+
+#ifdef HAVE_RENAMEAT2
+/*
+ * Return TRUE when "err" means that the renameat2() flags are not supported by
+ * this kernel or by the file system the files are on.
+ * Testing for ENOSYS is not enough: only a missing system call gives that.
+ * File systems that do not implement the operation (NFS, CIFS, overlayfs, most
+ * FUSE file systems) report EINVAL or EOPNOTSUPP instead.
+ */
+    static int
+rename_flags_unsupported(int err)
+{
+    return err == ENOSYS || err == EINVAL
+# ifdef ENOTSUP
+	    || err == ENOTSUP
+# endif
+# if defined(EOPNOTSUPP) && (!defined(ENOTSUP) || EOPNOTSUPP != ENOTSUP)
+	    || err == EOPNOTSUPP
+# endif
+	    ;
 }
+#endif
+
+/*
+ * rename() with flags, a wrapper around renameat2().
+ *
+ * "flags" is either zero for a plain rename, or VIM_RENAME_EXCHANGE to swap the
+ * two names atomically.  When flags are given there is no fall back to a plain
+ * rename: a caller that needs an exchange cannot use a rename instead, it has
+ * to do something else entirely.
+ *
+ * "unsupported" may be NULL.  Otherwise it caches the "cannot be done here"
+ * answer: the system call is skipped when it is already TRUE, and it is set to
+ * TRUE when the system call says the flags are not supported.  The caller owns
+ * this variable and keeps it for one write only, since the next file written
+ * may well be on a different file system.
+ *
+ * Return 0 for success, -1 for failure with "errno" set.
+ */
+    int
+vim_rename2(char_u *from, char_u *to, unsigned int flags, int *unsupported)
+{
+    if (flags == 0)
+	return mch_rename((char *)from, (char *)to);
+
+#ifdef HAVE_RENAMEAT2
+    if (unsupported == NULL || !*unsupported)
+    {
+	if (vim_renameat2(AT_FDCWD, (char *)from, AT_FDCWD, (char *)to,
+								   flags) == 0)
+	    return 0;
+	if (rename_flags_unsupported(errno))
+	{
+	    if (unsupported != NULL)
+		*unsupported = TRUE;
+	}
+	return -1;
+    }
+#endif
+
+    // Flags requested but not available here.
+    if (unsupported != NULL)
+	*unsupported = TRUE;
+    errno = ENOSYS;
+    return -1;
+}
+
+/*
+ * Where the data that buf_write() produced currently lives.
+ *
+ * When it can, buf_write() writes to a temporary file next to the file that is
+ * being replaced and renames it over that file, so that a reader sees either
+ * the complete old file or the complete new one.  Which of the two names holds
+ * the new data changes while the write progresses, and getting that wrong
+ * either destroys the user's file or throws away the data just written, so it
+ * is tracked explicitly rather than derived from a handful of flags.
+ */
+typedef enum
+{
+    NEW_IN_TARGET,	    // no temporary file, wrote into the target itself
+    NEW_IN_TMP,		    // new data in "wftmp", target still has the old data
+    NEW_AT_TARGET_OLD_IN_TMP, // new data in the target, old data in "wftmp"
+    NEW_AT_TARGET	    // new data in the target, "wftmp" is gone
+} newdata_T;
+
+/*
+ * State of the backup file.
+ */
+typedef enum
+{
+    BACKUP_NONE,	    // no backup wanted, or none could be made
+    BACKUP_PENDING,	    // name reserved, the file does not exist yet
+    BACKUP_READY	    // the backup exists and holds the previous contents
+} backupstate_T;
+
+/*
+ * Free "*errmsgp" when it was allocated and forget about it.
+ */
+    static void
+clear_errmsg(char_u **errmsgp, int *allocatedp)
+{
+    if (*allocatedp)
+	vim_free(*errmsgp);
+    *errmsgp = NULL;
+    *allocatedp = FALSE;
+}
+
+/*
+ * Set "*errmsgp" to "fmt" with "arg" filled in for the single "%s" it holds.
+ * buf_write() prints its message with emsg(), which does no formatting at all,
+ * so a message with an argument has to be expanded here.  Without this the user
+ * is shown the literal "%s".
+ * Falls back to the unexpanded message when out of memory.
+ */
+    static void
+set_errmsg_str(char_u **errmsgp, int *allocatedp, char *fmt, char_u *arg)
+{
+    char_u	*msg;
+    size_t	len;
+
+    clear_errmsg(errmsgp, allocatedp);
+
+    if (arg == NULL)
+	arg = (char_u *)"";
+    len = STRLEN(fmt) + STRLEN(arg) + 1;
+    msg = alloc(len);
+    if (msg == NULL)
+    {
+	// Out of memory, the unexpanded message is still better than nothing.
+	*errmsgp = (char_u *)fmt;
+	return;
+    }
+    vim_snprintf((char *)msg, len, fmt, arg);
+    *errmsgp = msg;
+    *allocatedp = TRUE;
+}
+
+/*
+ * Check whether "backup" can be used as the name of a backup file.
+ *
+ * Writing a file over a directory can never work.  Without this check the
+ * problem only shows up much later, as a rename that fails with EISDIR, and
+ * the user is left with an unwritten file and a message that does not mention
+ * the backup at all.
+ *
+ * Return TRUE when the name cannot be used and set "*errmsgp".
+ */
+    static int
+backup_name_is_bad(char_u *backup, char_u **errmsgp, int *allocatedp)
+{
+    if (mch_isdir(backup))
+    {
+	set_errmsg_str(errmsgp, allocatedp,
+		_("E999: Backup file \"%s\" is a directory"), backup);
+	return TRUE;
+    }
+    return FALSE;
+}
+
+/*
+ * Return TRUE when a file can be created in the directory that holds "fname".
+ *
+ * Used before deciding to put off making the backup until after the write: the
+ * old code proved the directory was usable by creating the backup right away,
+ * so without this check a backup in an unwritable directory would only be
+ * discovered once the file had already been replaced.
+ */
+    static int
+dir_is_writable(char_u *fname)
+{
+    char_u	dirname[MAXPATHL + 1];
+    char_u	*tail = gettail(fname);
+    size_t	len = (size_t)(tail - fname);
+
+    if (len == 0)
+	STRCPY(dirname, ".");
+    else
+    {
+	if (len >= sizeof(dirname))
+	    return FALSE;
+	vim_strncpy(dirname, fname, len);
+	// Drop the trailing path separator, but keep it for the root directory.
+	if (len > 1 && after_pathsep(dirname, dirname + len))
+	    dirname[len - 1] = NUL;
+	if (*dirname == NUL)
+	    STRCPY(dirname, ".");
+    }
+    return mch_access((char *)dirname, W_OK) == 0;
+}
+
+#if defined(UNIX)
+/*
+ * Return the mode a file created with open(..., 0666) would get, that is 0666
+ * masked with the current umask.  mkstemp() always creates the file with mode
+ * 0600, which is not what a newly created file should end up with.
+ */
+    static mode_t
+default_file_perm(void)
+{
+    mode_t	umask_save = umask(0);
+
+    (void)umask(umask_save);
+    return (mode_t)(0666 & ~umask_save);
+}
+#endif
 
 /*
  * Convert a Unicode character to bytes.
@@ -543,7 +751,7 @@ buf_write_bytes(struct bw_info *ip)
 	{
 	    char_u *outbuf;
 
-	    len = crypt_encode_alloc(curbuf->b_cryptstate, buf, len, &outbuf,
+	    len = crypt_encode_alloc(ip->bw_buffer->b_cryptstate, buf, len, &outbuf,
 								ip->bw_finish);
 	    if (len == 0)
 		return OK;  // Crypt layer is buffering, will flush later.
@@ -678,22 +886,30 @@ buf_write(
 {
     int		    fd = -1;
     char_u	    *backup = NULL;
+    backupstate_T   backup_state = BACKUP_NONE;
     int		    backup_copy = FALSE; // copy the original file?
     int		    dobackup;
-    int		    can_write_dir = 0;  /* Can create file on dir where 'fname' resides */
-    int		    backup_linked = 0;  /* Backup file is link(2)'ed to 'fname' */
+    int		    can_write_dir = 0;	// can create a file in the directory
+					// where the target file lives
+    int		    remove_target_first = FALSE; // unlink the target before
+					// writing, so that a new inode is used
+    char_u	    *backup_errmsg = NULL; // why no backup could be made; only
+					// reported when no backup was made at all
+    int		    backup_errmsg_allocated = FALSE;
     char_u	    *ffname;
     char_u	    *wfname = NULL;	// name of file to write to
-    char_u	    *wfname_orig = NULL; /* Kill me */
-    char_u	    *fname_real = fname; // path the rename targets:
-                                         // = fname normally, = resolved
-                                         // target if fname is a symlink we want to preserve
-    char_u	    *fname_real_alloc = NULL; // owns fname_real when alloc'd
-    char_u	    wftmp[MAXPATHL+1];
+    char_u	    *target = fname;	// file that the temporary file replaces:
+					// "fname", or the file the symlink
+					// points to when the symlink is kept
+    char_u	    *target_alloc = NULL; // owns "target" when allocated
+    char_u	    wftmp[MAXPATHL + 1]; // name of the temporary file
+    newdata_T	    newdata = NEW_IN_TARGET; // where the new data is
+    int		    target_untouched = FALSE; // failed, but the file that was to
+					// be replaced still has its old contents
+    int		    rename_exchange_unsupported = FALSE; // cache for this write
     char_u	    *s;
     char_u	    *ptr;
     char_u	    c;
-    char_u	    *tmp_fname;
     int		    len;
     linenr_T	    lnum;
     long	    nchars;
@@ -729,17 +945,12 @@ buf_write(
     char_u	    *fenc;		// effective 'fileencoding'
     char_u	    *fenc_tofree = NULL; // allocated "fenc"
     int		    wb_flags = 0;
-    int		    use_rename_exchange = FALSE;
-    int		    tmp_write_fd = -1; // fd for wftmp
+    int		    tmp_write_fd = -1;	// fd for "wftmp", -1 when not used
 #ifdef HAVE_ACL
     vim_acl_T	    acl = NULL;		// ACL copied from original file to
 					// backup or new file
-    int		    ret;
-#if defined(UNIX) || defined(WIN32)
-    struct stat     st;
 #endif
-
-#endif
+    stat_T	    st;
 #ifdef FEAT_PERSISTENT_UNDO
     int		    write_undo_file = FALSE;
     context_sha256_T sha_ctx;
@@ -1078,7 +1289,14 @@ buf_write(
     msg_scroll = FALSE;		    // always overwrite the file message now
 
     buffer = alloc(WRITEBUFSIZE);
-    if (buffer == NULL) goto fail;
+    if (buffer == NULL)
+    {
+	// Note: "fail" sets retval to FAIL.  Reporting OK here would make the
+	// caller believe the file was written; ":wq" would then throw the
+	// buffer away.
+	errmsg = (char_u *)_(e_out_of_memory);
+	goto fail;
+    }
     bufsize = WRITEBUFSIZE;
 
 // Get information about original file (if there is one).
@@ -1091,12 +1309,25 @@ buf_write(
         // Skip the temp-file approach if fname is a dangling symlink:
         // vanilla vim creates the target through the link via O_CREAT,
         // and we'd otherwise replace the link with a regular file.
-        if (mch_lstat((char *)fname, &st) != 0)
+        if (mch_lstat((char *)fname, &st) != 0
+                && vim_snprintf((char *)wftmp, sizeof(wftmp),
+                              "%s.tmp.XXXXXX", (char *)fname) < (int)sizeof(wftmp))
         {
-            STRCPY(wftmp, fname);
-            vim_snprintf(wftmp, sizeof(wftmp), "%s.tmp.XXXXXX", fname);
             if ((tmp_write_fd = mkstemp((char *)wftmp)) >= 0)
-                can_write_dir = 1;
+            {
+                // mkstemp() always creates the file with mode 0600.  A file
+                // that is being created now must get the mode that open()
+                // with 0666 would have given it, otherwise every new file
+                // written by Vim ends up readable by its owner only.
+                if (fchmod(tmp_write_fd, default_file_perm()) != 0)
+                {
+                    close(tmp_write_fd);
+                    tmp_write_fd = -1;
+                    mch_remove(wftmp);
+                }
+                else
+                    can_write_dir = 1;
+            }
         }
     } else {
         int	use_temp_rename = TRUE;
@@ -1125,6 +1356,8 @@ buf_write(
 
         /*
          * Decide what path to base the temp file on:
+         *   - a device, fifo or anything else that is not a regular file:
+         *     never rename anything into its place, write to it directly;
          *   - hardlinked target (and !BREAKHARDLINK): skip temp+rename,
          *     truncate-and-overwrite via mch_open below preserves nlink;
          *   - symlink (and !BREAKSYMLINK): resolve to target so the
@@ -1133,7 +1366,14 @@ buf_write(
          *     vim's truncate-and-overwrite reuses the inode;
          *   - everything else: use fname directly.
          */
-        if (st_old.st_nlink > 1 && !(bkc & BKC_BREAKHARDLINK))
+        if (device || perm < 0)
+        {
+            // Creating a temporary file next to a device node and giving it
+            // the "mode" of that device (which is -1 here) would briefly leave
+            // a file with every permission bit set, including setuid.
+            use_temp_rename = FALSE;
+        }
+        else if (st_old.st_nlink > 1 && !(bkc & BKC_BREAKHARDLINK))
         {
             use_temp_rename = FALSE;
         }
@@ -1146,16 +1386,22 @@ buf_write(
                     && !(bkc & BKC_BREAKSYMLINK))
             {
                 // Resolve the symlink chain.  realpath() returns the
-                // canonical path with all symlinks expanded.
-                char_u *resolved = alloc(MAXPATHL);
+                // canonical path with all symlinks expanded.  It returns
+                // memory from malloc(), so copy it into memory owned by Vim
+                // and release it right away.
+                char *rp = realpath((char *)fname, NULL); // POSIX.1-2008
+                char_u *resolved = NULL;
 
-                if (resolved == NULL
-                        || realpath((char *)fname,
-                                                (char *)resolved) == NULL)
+                if (rp != NULL)
                 {
-                    // Resolve failed (loop, broken link, etc.) -- fall
-                    // back to truncate-and-overwrite via the symlink.
-                    vim_free(resolved);
+                    resolved = vim_strsave((char_u *)rp);
+                    free(rp);
+                }
+
+                if (resolved == NULL)
+                {
+                    // Resolve failed (loop, broken link, out of memory) --
+                    // fall back to truncate-and-overwrite via the symlink.
                     use_temp_rename = FALSE;
                 }
                 else
@@ -1174,24 +1420,23 @@ buf_write(
                     }
                     else
                     {
-                        fname_real = resolved;
-                        fname_real_alloc = resolved;
+                        target = resolved;
+                        target_alloc = resolved;
                     }
                 }
             }
-            // else: not a symlink, or we want to break it -- fname_real
+            // else: not a symlink, or we want to break it -- "target"
             //       stays == fname and the rename will operate on it.
         }
 
-        if (use_temp_rename)
+        if (use_temp_rename
+                && vim_snprintf((char *)wftmp, sizeof(wftmp),
+                          "%s.tmp.XXXXXX", (char *)target) < (int)sizeof(wftmp))
         {
             /*
              * Check if we can create a file in the target's directory
              * and set the owner/group to those of the original file.
              */
-            STRCPY(wftmp, fname_real);
-            vim_snprintf(wftmp, sizeof(wftmp),
-                                            "%s.tmp.XXXXXX", fname_real);
             if ((tmp_write_fd = mkstemp((char *)wftmp)) >= 0)
             {
 # ifdef HAVE_FCHOWN
@@ -1207,10 +1452,16 @@ buf_write(
                     // Strip suid/sgid/sticky when the new file will be
                     // owned by a different user/group.
                     perm &= ~(S_ISUID | S_ISGID | S_ISVTX);
-                fchmod(tmp_write_fd, perm);
 # endif
-                if (mch_stat((char *)wftmp, &st) == 0
-                        && st.st_mode == perm
+                // mkstemp() creates the file with mode 0600, give it the mode
+                // of the file it is going to replace.  Only the permission
+                // bits: "perm" also holds the file type here.  This is not
+                // inside the HAVE_FCHOWN block on purpose, without it the mode
+                // check below would never succeed and this whole path would
+                // silently never be used.
+                if (fchmod(tmp_write_fd, (mode_t)(perm & 07777)) == 0
+                        && mch_stat((char *)wftmp, &st) == 0
+                        && (long)(st.st_mode & 07777) == (perm & 07777)
                         && ((st.st_uid == st_old.st_uid
                              && st.st_gid == st_old.st_gid)
                             || forceit))
@@ -1528,15 +1779,38 @@ buf_write(
 		}
 		vim_free(rootname);
 
+		// Writing a file over a directory can never work.  Remember why
+		// this name is unusable and try the next entry of 'backupdir';
+		// the message is only shown when no backup could be made at all.
+		// Without it the problem would surface much later as a rename that
+		// fails with EISDIR, and the file the user asked for stays
+		// unwritten with no hint about the backup.
+		if (backup != NULL && backup_name_is_bad(backup, &backup_errmsg,
+						 &backup_errmsg_allocated))
+		{
+		    VIM_CLEAR(backup);
+		    continue;
+		}
+
 		// Try to create the backup file
 		if (backup != NULL)
 		{
 		    char_u backupfn[MAXPATHL + 1];
+
+		    if (vim_snprintf((char *)backupfn, sizeof(backupfn),
+				"%s.tmp.XXXXXX", (char *)backup)
+						    >= (int)sizeof(backupfn))
+		    {
+			VIM_CLEAR(backup);
+			continue;	// try the next entry in 'backupdir'
+		    }
 #ifdef UNIX
+		    // mkstemp() creates the file with mode 0600 masked by the
+		    // umask; clear the umask so that the result is predictable, the
+		    // real mode is set below.
 		    umask_save = umask(0);
 #endif
-		    vim_snprintf(backupfn, sizeof(backupfn), "%s.tmp.XXXXXX", backup);
-		    bfd = mkstemp(backupfn);
+		    bfd = mkstemp((char *)backupfn);
 #ifdef UNIX
 		    (void)umask(umask_save);
 #endif
@@ -1545,12 +1819,15 @@ buf_write(
 		    }
 		    else
 		    {
-			// Set file protection same as original file, but
-			// strip s-bit.  Only needed if umask() wasn't used
-			// above.
+			// Set file protection same as original file, but strip
+			// the s-bit: the backup belongs to whoever is writing, it
+			// must never be setuid or setgid.  mkstemp() made the file
+			// with mode 0600, so this always has to be done.
 #ifndef UNIX
 			(void)mch_setperm(backupfn, perm & 0777);
 #else
+			if (perm >= 0)
+			    (void)fchmod(bfd, (mode_t)(perm & 0777));
 			// Try to set the group of the backup same as the
 			// original file. If this fails, set the protection
 			// bits for the group same as the protection bits for
@@ -1607,14 +1884,28 @@ buf_write(
 #ifdef MSWIN
 			(void)mch_copy_file_attribute(fname, backupfn);
 #endif
-			if (vim_fsync(bfd) < 0)
-			    errmsg = _("E999: Error fsyncing \"%s\"");
+			if (vim_fsync(bfd) < 0 && errmsg == NULL)
+			    set_errmsg_str(&errmsg, &errmsg_allocated,
+				    _("E999: Error syncing backup file \"%s\" to disk"),
+				    backup);
 			if (close(bfd) < 0 && errmsg == NULL)
 			    errmsg = (char_u *)_(e_close_error_for_backup_file_add_bang_to_write_anyway);
-			if (rename(backupfn, backup) == -1) {
-			    errmsg = _("E999: Error renaming backup file \"%s\"");
-			    unlink(backupfn);
+
+			// Put the backup in place.  Use vim_rename() so that a
+			// backup directory on another file system also works, and
+			// so that the name is handled the same way as everywhere
+			// else.
+			if (errmsg != NULL)
+			    mch_remove(backupfn);
+			else if (vim_rename(backupfn, backup) != 0)
+			{
+			    set_errmsg_str(&errmsg, &errmsg_allocated,
+				    _("E999: Cannot rename temporary file to backup file \"%s\""),
+				    backup);
+			    mch_remove(backupfn);
 			}
+			else
+			    backup_state = BACKUP_READY;
 			break;
 		    }
 		}
@@ -1624,6 +1915,15 @@ buf_write(
 	    fd = -1;
 	    vim_free(copybuf);
 
+	    if (backup == NULL && errmsg == NULL && backup_errmsg != NULL)
+	    {
+		// No entry of 'backupdir' worked, now say why the last one did
+		// not.
+		errmsg = backup_errmsg;
+		errmsg_allocated = backup_errmsg_allocated;
+		backup_errmsg = NULL;
+		backup_errmsg_allocated = FALSE;
+	    }
 	    if (backup == NULL && errmsg == NULL)
 		errmsg = (char_u *)_(e_cannot_create_backup_file_add_bang_to_write_anyway);
 	    // ignore errors when forceit is TRUE
@@ -1632,7 +1932,7 @@ buf_write(
 		retval = FAIL;
 		goto fail;
 	    }
-	    errmsg = NULL;
+	    clear_errmsg(&errmsg, &errmsg_allocated);
 	}
 	else
 	{
@@ -1640,7 +1940,7 @@ buf_write(
 	    char_u	*p;
 	    char_u	*rootname;
 
-	    // Make a backup by renaming the original file.
+	    // Make a backup by replacing the original file.
 
 	    // If 'cpoptions' includes the "W" flag, we don't want to
 	    // overwrite a read-only file.  But rename may be possible
@@ -1705,36 +2005,70 @@ buf_write(
 			    VIM_CLEAR(backup);
 		    }
 		}
-		// If we can use RENAME_EXCHANGE, skip the immediate rename/copy.
-		// We will perform the exchange atomically later.
-		if (backup != NULL && can_write_dir && !append && !filtering) {
-		    use_rename_exchange = TRUE;
-		    break;
+		// Writing a file over a directory can never work.  Remember why
+		// and try the next entry of 'backupdir'; the message is only
+		// shown when no backup could be made at all.
+		if (backup != NULL && backup_name_is_bad(backup, &backup_errmsg,
+						 &backup_errmsg_allocated))
+		{
+		    VIM_CLEAR(backup);
+		    continue;
 		}
 
 		if (backup != NULL)
 		{
-		    // Delete any existing backup and move the current version
-		    // to the backup.	For safety, we don't remove the backup
-		    // until the write has finished successfully. And if the
-		    // 'backup' option is set, leave it around.
-
-		    // If the renaming of the original file to the backup file
-		    // works, quit here.
-		    ret = vim_copyfile(fname, backup);
-		    if (ret == 0) {
-			break;
-		    } else if (ret == 1) {
-			backup_linked = 1;
+		    // The new file is going to be written to a temporary file
+		    // and renamed over the target.  In that case the previous
+		    // contents can be turned into the backup with a single
+		    // atomic exchange after the write, which is both cheaper
+		    // and safer than copying the file now.  Remember that the
+		    // name is taken but the file does not exist yet; whoever
+		    // decides not to use the temporary file has to create the
+		    // backup before touching the target.
+		    if (can_write_dir && tmp_write_fd >= 0 && !append
+			    && !filtering && dir_is_writable(backup))
+		    {
+			backup_state = BACKUP_PENDING;
 			break;
 		    }
 
-		    VIM_CLEAR(backup);   // don't do the rename below
+		    // No temporary file: make the backup now.  A copy is used
+		    // rather than a rename so that the original stays in place
+		    // until the backup is known to be complete; the original
+		    // is removed further down, just before the new file is
+		    // created, because 'backupcopy' is "no" here and the file
+		    // is expected to get a new inode.
+		    if (vim_copyfile_quiet(fname, backup) == OK)
+		    {
+			backup_state = BACKUP_READY;
+#ifdef UNIX
+			// The backup must not be setuid or setgid, it is owned
+			// by whoever is writing.
+			if (perm >= 0)
+			    (void)mch_setperm(backup, perm & 0777);
+#endif
+			remove_target_first = TRUE;
+			break;
+		    }
+
+		    // Copying failed, try the next entry in 'backupdir'.
+		    VIM_CLEAR(backup);
 		}
 	    }
 	    if (backup == NULL && !forceit)
 	    {
-		errmsg = (char_u *)_(e_cant_make_backup_file_add_bang_to_write_anyway);
+		if (backup_errmsg != NULL)
+		{
+		    // Say why no backup could be made, e.g. because the name is
+		    // a directory.
+		    clear_errmsg(&errmsg, &errmsg_allocated);
+		    errmsg = backup_errmsg;
+		    errmsg_allocated = backup_errmsg_allocated;
+		    backup_errmsg = NULL;
+		    backup_errmsg_allocated = FALSE;
+		}
+		else
+		    errmsg = (char_u *)_(e_cant_make_backup_file_add_bang_to_write_anyway);
 		goto fail;
 	    }
 	}
@@ -1918,20 +2252,63 @@ buf_write(
 	}
 	else
 	{
-	    if (tmp_write_fd >= 0 && (wfname == fname) && !append) {
-		// Use the file we opened earlier
+	    if (tmp_write_fd >= 0 && wfname == fname && !backup_copy && !append)
+	    {
+		// Write to the temporary file created earlier and rename it
+		// over "target" when the write succeeded.
 		fd = tmp_write_fd;
-		wfname_orig = fname_real; // resolved target if symlink
+		tmp_write_fd = -1;
 		wfname = wftmp;
-	    } else {
-		// We have an open temp file but aren't using it (e.g. append mode or backup_copy forced overwrite)
-		if (tmp_write_fd >= 0) {
+		newdata = NEW_IN_TMP;
+	    }
+	    else
+	    {
+		// Not using the temporary file after all: appending, writing
+		// through a converter, or 'backupcopy' says the file has to be
+		// overwritten in place.
+		if (tmp_write_fd >= 0)
+		{
 		    close(tmp_write_fd);
 		    mch_remove(wftmp);
 		    tmp_write_fd = -1;
 		}
 
-		if (backup_linked)
+		// The backup was left for the atomic exchange to produce, but
+		// there will be no exchange.  It has to exist before the
+		// original is touched, otherwise the previous contents are
+		// gone for good and "backup" would name a file that was never
+		// created.
+		if (backup_state == BACKUP_PENDING)
+		{
+		    if (vim_copyfile_quiet(fname, backup) == OK)
+		    {
+			backup_state = BACKUP_READY;
+#ifdef UNIX
+			// The backup must not be setuid or setgid.
+			if (perm >= 0)
+			    (void)mch_setperm(backup, perm & 0777);
+#endif
+			if (!backup_copy)
+			    remove_target_first = TRUE;
+		    }
+		    else if (!forceit)
+		    {
+			errmsg = (char_u *)_(e_cant_make_backup_file_add_bang_to_write_anyway);
+			goto restore_backup;
+		    }
+		    else
+		    {
+			// ":w!": write anyway, but do not pretend there is a
+			// backup.
+			backup_state = BACKUP_NONE;
+			VIM_CLEAR(backup);
+		    }
+		}
+
+		// 'backupcopy' is "no": the file is expected to get a new
+		// inode, so the old one has to go.  Only do this once the
+		// backup really exists.
+		if (remove_target_first && backup_state == BACKUP_READY)
 		    mch_remove(fname);
 	    }
 
@@ -1963,8 +2340,6 @@ buf_write(
 		if (errmsg == NULL)
 		{
 #ifdef UNIX
-		    stat_T	st;
-
 		    // Don't delete the file when it's a hard or symbolic link.
 		    if ((!newfile && st_old.st_nlink > 1)
 			    || (mch_lstat((char *)fname, &st) == 0
@@ -2001,7 +2376,11 @@ restore_backup:
 		    // If we failed to open the file, we don't need a backup.
 		    // Throw it away.  If we moved or removed the original file
 		    // try to put the backup in its place.
-		    if (backup != NULL && wfname == fname)
+		    // Only when the backup file really exists: the name may
+		    // just have been reserved for an exchange that never
+		    // happened.
+		    if (backup != NULL && backup_state == BACKUP_READY
+							     && wfname == fname)
 		    {
 			if (backup_copy)
 			{
@@ -2040,8 +2419,6 @@ restore_backup:
 
 #if defined(UNIX)
 	    {
-		stat_T	st;
-
 		// Double check we are writing the intended file before making
 		// any changes.
 		if (overwriting
@@ -2209,6 +2586,8 @@ restore_backup:
 			    || (lnum == buf->b_ml.ml_line_count
 							   && !buf->b_p_eol))))
 	    {
+		if (end == 0)
+		    break;
 		++lnum;			// written the line, count it
 		no_eol = TRUE;
 		break;
@@ -2342,26 +2721,40 @@ restore_backup:
 #endif
 
 #if defined(HAVE_SELINUX) || defined(HAVE_SMACK) || defined(FEAT_XATTR)
-	// Probably need to set the security context.
+	// The file was created from scratch, so it does not have the security
+	// context and the extended attributes of the file it replaces.  Copy
+	// them from whichever name still holds the previous contents: with a
+	// temporary file the original is still in place, otherwise it was
+	// turned into the backup file.
 	if (!backup_copy)
 	{
+	    char_u	*sec_source = NULL;
+
+	    if (newdata == NEW_IN_TMP)
+		sec_source = target;
+	    else if (backup != NULL && backup_state == BACKUP_READY)
+		sec_source = backup;
+
+	    if (sec_source != NULL)
+	    {
 # if defined(HAVE_SELINUX) || defined(HAVE_SMACK)
-	    mch_copy_sec(backup, wfname);
+		mch_copy_sec(sec_source, wfname);
 # endif
 # ifdef FEAT_XATTR
-	    mch_copy_xattr(backup, wfname);
+		mch_copy_xattr(sec_source, wfname);
 # endif
+	    }
 	}
 #endif
 
 #ifdef UNIX
 	// When creating a new file, set its owner/group to that of the
 	// original file.  Get the new device and inode number.
-	if (backup != NULL && !backup_copy)
+	// This also applies when writing to a temporary file: it is a new file
+	// too, and it is going to take the place of the original.
+	if ((backup != NULL || newdata == NEW_IN_TMP) && !backup_copy)
 	{
 # ifdef HAVE_FCHOWN
-	    stat_T	st;
-
 	    // Don't change the owner when it's already OK, some systems remove
 	    // permission or ACL stuff.
 	    if (mch_stat((char *)wfname, &st) < 0
@@ -2438,38 +2831,142 @@ restore_backup:
 	    }
 	    mch_remove(wfname);
 	    vim_free(wfname);
+	    wfname = NULL;
 	}
 #endif
     }
 
-    if (wfname_orig) {
-	int exchanged = FALSE;
-	if (use_rename_exchange) {
-	    // Try atomic exchange: wftmp (new) <-> wfname_orig (old)
-	    if (vim_rename2(wftmp, wfname_orig, RENAME_EXCHANGE) == 0) {
-		exchanged = TRUE;
-		// wftmp now contains the old content (backup). Move it to backup path.
-		if (backup != NULL) {
-		    vim_rename(wftmp, backup);
-		} else {
+    /*
+     * The data was written to a temporary file next to the file it replaces.
+     * Put it in place, and turn the previous contents into the backup file
+     * when one was promised.
+     *
+     * Everything below only moves names around; the data itself is already on
+     * disk.  "newdata" says which name holds the new data at any point, so
+     * that a failure halfway never removes the wrong file.
+     */
+    if (newdata == NEW_IN_TMP && end != 0)
+    {
+	if (backup != NULL && backup_state == BACKUP_PENDING)
+	{
+	    // Swap the two names in one atomic step: afterwards the target
+	    // holds the new data and "wftmp" holds what the target had, ready
+	    // to become the backup.  This is the only way to get both a backup
+	    // and an atomic replace without copying the file twice.
+	    if (vim_rename2(wftmp, target, VIM_RENAME_EXCHANGE,
+					&rename_exchange_unsupported) == 0)
+	    {
+		newdata = NEW_AT_TARGET_OLD_IN_TMP;
+
+		if (vim_rename(wftmp, backup) == 0
+			|| vim_copyfile_quiet(wftmp, backup) == OK)
+		{
+		    backup_state = BACKUP_READY;
+		    mch_remove(wftmp);	// no-op when the rename above worked
+		    newdata = NEW_AT_TARGET;
+		}
+		else if (forceit)
+		{
+		    // ":w!": the user accepted that the write happens even when
+		    // no backup can be made.
 		    mch_remove(wftmp);
+		    newdata = NEW_AT_TARGET;
+		    backup_state = BACKUP_NONE;
+		    VIM_CLEAR(backup);
+		}
+		else if (vim_rename2(wftmp, target, VIM_RENAME_EXCHANGE,
+								  NULL) == 0)
+		{
+		    // A backup was asked for and cannot be made, so the write
+		    // must not happen either.  The exchange is its own inverse:
+		    // swapping again puts the original file back, with its
+		    // inode, mode and owner unchanged, and leaves the new data
+		    // in the temporary file where the clean up below drops it.
+		    newdata = NEW_IN_TMP;
+		    end = 0;
+		    errmsg = (char_u *)_(e_cant_make_backup_file_add_bang_to_write_anyway);
+		}
+		else
+		{
+		    // Could not put the backup in place and could not undo the
+		    // exchange either.  The new data is in the file and the
+		    // previous contents are in the temporary file; say where
+		    // they are instead of deleting the only copy of them.
+		    // Not a write error: the file is complete, and reporting one
+		    // would leave the buffer modified and repeat all of this on
+		    // the next ":w".
+		    semsg(_("E999: Cannot create backup file, previous contents left in \"%s\""),
+								       wftmp);
+		    backup_state = BACKUP_NONE;
+		    VIM_CLEAR(backup);
+		    // "newdata" stays NEW_AT_TARGET_OLD_IN_TMP so that the clean
+		    // up below does not remove "wftmp".
+		}
+	    }
+	    else
+	    {
+		// No atomic exchange here (old kernel, or a file system that
+		// does not support it: NFS, CIFS, overlayfs, most FUSE file
+		// systems).  Make the backup by copying the old contents
+		// first, only then put the new file in place.
+		if (vim_copyfile_quiet(target, backup) != OK)
+		{
+		    // Refuse to overwrite: the backup was asked for and this
+		    // is the last moment at which the previous contents can
+		    // still be saved.  The target is untouched, the new data
+		    // is dropped with the temporary file.
+		    end = 0;
+		    errmsg = (char_u *)_(e_cant_make_backup_file_add_bang_to_write_anyway);
+		}
+		else
+		{
+		    backup_state = BACKUP_READY;
+#ifdef UNIX
+		    // The backup must not be setuid or setgid.
+		    if (perm >= 0)
+			(void)mch_setperm(backup, perm & 0777);
+#endif
 		}
 	    }
 	}
 
-	if (!exchanged) {
-	    // Fallback: If we planned to exchange but failed, ensure we create the backup now
-	    // before overwriting the original.
-	    if (use_rename_exchange && backup != NULL) {
-		if (vim_copyfile(wfname_orig, backup) != OK) {
-		    end = 0; // Backup failed, unsafe to overwrite
-		}
-	    }
-
-	    if (end != 0 && mch_rename(wftmp, wfname_orig) == -1) {
+	if (newdata == NEW_IN_TMP && end != 0)
+	{
+	    // Either no backup was wanted, or it has just been made: a plain
+	    // rename puts the new file in place.
+	    if (vim_rename(wftmp, target) == 0)
+		newdata = NEW_AT_TARGET;
+	    else
+	    {
 		end = 0;
+		set_errmsg_str(&errmsg, &errmsg_allocated,
+			_("E999: Cannot rename temporary file to \"%s\""),
+			target);
 	    }
 	}
+    }
+
+    if (newdata == NEW_IN_TMP)
+    {
+	// The write failed or could not be put in place: the target still has
+	// its previous contents, drop the temporary file.
+	mch_remove(wftmp);
+	target_untouched = TRUE;
+    }
+
+    if (newdata == NEW_AT_TARGET || newdata == NEW_AT_TARGET_OLD_IN_TMP)
+    {
+	// The file was replaced, it has a new inode now.
+	buf_setino(buf);
+
+#ifdef UNIX
+	// A rename is only guaranteed to survive a crash once the directory
+	// entry itself has been written to disk.  Without this the atomic
+	// replace can still show the old file after a power failure, which
+	// defeats the whole point of writing to a temporary file first.
+	if (buf->b_p_fs >= 0 ? buf->b_p_fs : p_fs)
+	    (void)vim_fsync_dir(target);
+#endif
     }
 
     if (end == 0)
@@ -2504,7 +3001,10 @@ restore_backup:
 	// When "backup_copy" is set we need to copy the backup over the new
 	// file.  Otherwise rename the backup file.
 	// If this is OK, don't give the extra warning message.
-	if (backup != NULL)
+	// Nothing to restore when the data went to a temporary file: the
+	// target was never touched, and it was just dropped above.
+	if (backup != NULL && backup_state == BACKUP_READY
+					       && newdata != NEW_IN_TMP)
 	{
 	    if (backup_copy)
 	    {
@@ -2645,7 +3145,7 @@ restore_backup:
 	char *org = (char *)buf_modname((buf->b_p_sn || buf->b_shortname),
 							  fname, p_pm, FALSE);
 
-	if (backup != NULL)
+	if (backup != NULL && backup_state == BACKUP_READY)
 	{
 	    // If the original file does not exist yet
 	    // the current backup file becomes the original file
@@ -2682,8 +3182,10 @@ restore_backup:
     }
 
     // Remove the backup unless 'backup' option is set or there was a
-    // conversion error.
-    if (!p_bk && backup != NULL && !write_info.bw_conv_error
+    // conversion error.  Only when it was really created: the name may just
+    // have been reserved for an exchange that never took place.
+    if (!p_bk && backup != NULL && backup_state == BACKUP_READY
+	    && !write_info.bw_conv_error
 	    && mch_remove(backup) != 0)
 	emsg(_(e_cant_delete_backup_file));
 
@@ -2692,13 +3194,37 @@ restore_backup:
     // Finish up.  We get here either after failure or success.
 fail:
     --no_wait_return;		// may wait for return now
+
+    // Only failures reach this label, the successful path jumps to "nofail".
+    // Returning OK here would make the caller believe the file was written;
+    // ":wq" would then throw the buffer away.
+    retval = FAIL;
+
+    if (tmp_write_fd >= 0)
+    {
+	close(tmp_write_fd);
+	tmp_write_fd = -1;
+	mch_remove(wftmp);
+    }
+    if (newdata == NEW_IN_TMP)
+    {
+	// The target still holds its previous contents, drop the file that was
+	// being prepared.
+	mch_remove(wftmp);
+	newdata = NEW_IN_TARGET;
+	target_untouched = TRUE;
+    }
+
 nofail:
 
     // Done saving, we accept changed buffer warnings again
     buf->b_saving = false;
 
+    if (wfname != NULL && wfname != fname && wfname != wftmp)
+        vim_free(wfname);
     vim_free(backup);
-    vim_free(fname_real_alloc);
+    clear_errmsg(&backup_errmsg, &backup_errmsg_allocated);
+    vim_free(target_alloc);
     vim_free(buffer);
     vim_free(fenc_tofree);
     vim_free(write_info.bw_conv_buf);
@@ -2740,7 +3266,10 @@ nofail:
 	    vim_free(errmsg);
 
 	retval = FAIL;
-	if (end == 0)
+	// Only warn when the file may really be damaged.  When the data was
+	// written to a temporary file the target was never opened, so it still
+	// has exactly the contents it had before.
+	if (end == 0 && !target_untouched)
 	{
 	    msg_puts_attr(_("\nWARNING: Original file may be lost or damaged\n"),
 		    attr | MSG_HIST);

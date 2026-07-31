@@ -1992,7 +1992,6 @@ EXTERN FILE *time_fd INIT(= NULL);  // where to write startup timing
  * the warning.
  */
 EXTERN int vim_ignored;
-EXTERN char *vim_ignoredp;
 
 #ifdef FEAT_EVAL
 // set by alloc_fail(): ID
