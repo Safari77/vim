@@ -4143,6 +4143,12 @@ vim_copyfile(char_u *from, char_u *to)
     fchmod(fd_out, perm);
 
     if (fstat(fd_in, &st) == -1) {
+        close(fd_in);
+        close(fd_out);
+        mch_remove(tmpfn);
+#ifdef HAVE_ACL
+        mch_free_acl(acl);
+#endif
         return FAIL;
     }
     n = st.st_size;
