@@ -2701,6 +2701,15 @@ scroll_cursor_bot(int min_scroll, int set_topbot)
     used = curwin->w_cline_height;
 #endif
 
+    if (do_sms && (dy_flags & DY_LASTLINE))
+    {
+	// The rest of the cursor line may be cut off at the bottom.
+	int upto_cursor = plines_win_col(curwin, cln, curwin->w_cursor.col);
+
+	if (upto_cursor < used)
+	    used = upto_cursor;
+    }
+
     // If the cursor is on or below botline, we will at least scroll by the
     // height of the cursor line, which is "used".  Correct for empty lines,
     // which are really part of botline.
@@ -2781,6 +2790,7 @@ scroll_cursor_bot(int min_scroll, int set_topbot)
 		)
 	    break;
 
+	linenr_T loff_lnum_before = loff.lnum;
 	// Add one line above
 	topline_back(&loff);
 	if (loff.height == MAXCOL)
@@ -2799,15 +2809,13 @@ scroll_cursor_bot(int min_scroll, int set_topbot)
 	    // Count screen lines that are below the window.
 	    scrolled += loff.height;
 	    if (loff.lnum == curwin->w_botline
-#ifdef FEAT_DIFF
-			    && loff.fill == 0
-#endif
-		    )
+		    && loff_lnum_before > curwin->w_botline)
 		scrolled -= curwin->w_empty_rows;
 	}
 
 	if (boff.lnum < curbuf->b_ml.ml_line_count)
 	{
+	    linenr_T boff_lnum_before = boff.lnum;
 	    // Add one line below
 	    botline_forw(&boff);
 	    used += boff.height;
@@ -2826,11 +2834,8 @@ scroll_cursor_bot(int min_scroll, int set_topbot)
 		{
 		    // Count screen lines that are below the window.
 		    scrolled += boff.height;
-		    if (boff.lnum == curwin->w_botline
-#ifdef FEAT_DIFF
-			    && boff.fill == 0
-#endif
-			    )
+		    if (boff.lnum >= curwin->w_botline
+			    && boff_lnum_before < curwin->w_botline)
 			scrolled -= curwin->w_empty_rows;
 		}
 	    }
