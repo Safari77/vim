@@ -8,6 +8,7 @@ SRC_ALL =	\
 		.github/MAINTAINERS \
 		.github/ISSUE_TEMPLATE/bug_report.yml \
 		.github/ISSUE_TEMPLATE/feature_request.md \
+		.github/workflows/ci-cygwin.yml \
 		.github/workflows/ci-linux.yml \
 		.github/workflows/ci-linux_asan.yml \
 		.github/workflows/ci-macos.yml \
@@ -95,7 +96,6 @@ SRC_ALL =	\
 		src/hardcopy.c \
 		src/hardcopy.h \
 		src/hardcopy_pango.c \
-		src/hardcopy_pango.h \
 		src/hardcopy_postscript.c \
 		src/hardcopy_postscript.h \
 		src/hashtab.c \
@@ -316,6 +316,8 @@ SRC_ALL =	\
 		src/proto/gui.pro \
 		src/proto/gui_beval.pro \
 		src/proto/hardcopy.pro \
+		src/proto/hardcopy_pango.pro \
+		src/proto/hardcopy_postscript.pro \
 		src/proto/hashtab.pro \
 		src/proto/help.pro \
 		src/proto/highlight.pro \
