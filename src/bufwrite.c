@@ -2858,11 +2858,15 @@ restore_backup:
 	    {
 		newdata = NEW_AT_TARGET_OLD_IN_TMP;
 
-		if (vim_rename(wftmp, backup) == 0
-			|| vim_copyfile_quiet(wftmp, backup) == OK)
+		if (vim_rename(wftmp, backup) == 0)
 		{
 		    backup_state = BACKUP_READY;
-		    mch_remove(wftmp);	// no-op when the rename above worked
+		    newdata = NEW_AT_TARGET;
+		}
+		else if (vim_copyfile_quiet(wftmp, backup) == OK)
+		{
+		    backup_state = BACKUP_READY;
+		    mch_remove(wftmp);
 		    newdata = NEW_AT_TARGET;
 		}
 		else if (forceit)
