@@ -271,7 +271,7 @@ dir_is_writable(char_u *fname)
 #if defined(UNIX)
 /*
  * Return the mode a file created with open(..., 0666) would get, that is 0666
- * masked with the current umask.  mkstemp() always creates the file with mode
+ * masked with the current umask.  vim_mkstemp() always creates the file with mode
  * 0600, which is not what a newly created file should end up with.
  */
     static mode_t
@@ -1313,9 +1313,9 @@ buf_write(
                 && vim_snprintf((char *)wftmp, sizeof(wftmp),
                               "%s.tmp.XXXXXX", (char *)fname) < (int)sizeof(wftmp))
         {
-            if ((tmp_write_fd = mkstemp((char *)wftmp)) >= 0)
+            if ((tmp_write_fd = vim_mkstemp((char *)wftmp)) >= 0)
             {
-                // mkstemp() always creates the file with mode 0600.  A file
+                // vim_mkstemp() always creates the file with mode 0600.  A file
                 // that is being created now must get the mode that open()
                 // with 0666 would have given it, otherwise every new file
                 // written by Vim ends up readable by its owner only.
@@ -1437,7 +1437,7 @@ buf_write(
              * Check if we can create a file in the target's directory
              * and set the owner/group to those of the original file.
              */
-            if ((tmp_write_fd = mkstemp((char *)wftmp)) >= 0)
+            if ((tmp_write_fd = vim_mkstemp((char *)wftmp)) >= 0)
             {
 # ifdef HAVE_FCHOWN
                 // Try to preserve the original owner/group.  Fails with
@@ -1453,7 +1453,7 @@ buf_write(
                     // owned by a different user/group.
                     perm &= ~(S_ISUID | S_ISGID | S_ISVTX);
 # endif
-                // mkstemp() creates the file with mode 0600, give it the mode
+                // vim_mkstemp() creates the file with mode 0600, give it the mode
                 // of the file it is going to replace.  Only the permission
                 // bits: "perm" also holds the file type here.  This is not
                 // inside the HAVE_FCHOWN block on purpose, without it the mode
@@ -1805,12 +1805,12 @@ buf_write(
 			continue;	// try the next entry in 'backupdir'
 		    }
 #ifdef UNIX
-		    // mkstemp() creates the file with mode 0600 masked by the
+		    // vim_mkstemp() creates the file with mode 0600 masked by the
 		    // umask; clear the umask so that the result is predictable, the
 		    // real mode is set below.
 		    umask_save = umask(0);
 #endif
-		    bfd = mkstemp((char *)backupfn);
+		    bfd = vim_mkstemp((char *)backupfn);
 #ifdef UNIX
 		    (void)umask(umask_save);
 #endif
@@ -1821,7 +1821,7 @@ buf_write(
 		    {
 			// Set file protection same as original file, but strip
 			// the s-bit: the backup belongs to whoever is writing, it
-			// must never be setuid or setgid.  mkstemp() made the file
+			// must never be setuid or setgid.  vim_mkstemp() made the file
 			// with mode 0600, so this always has to be done.
 #ifndef UNIX
 			(void)mch_setperm(backupfn, perm & 0777);

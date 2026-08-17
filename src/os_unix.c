@@ -401,30 +401,130 @@ mch_signal(int sig, sighandler_T func)
 #endif
 }
 
-int mch_get_random(char_u *buf, int len)
-{
-    ssize_t written;
-    uint8_t *p = buf;
+#if defined(__has_include)
+# if __has_include(<sys/random.h>)
+#  include <sys/random.h>
+#  define HAVE_SYS_RANDOM_H
+# endif
+#elif defined(__GLIBC__) && (__GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ >= 25))
+# include <sys/random.h>
+# define HAVE_SYS_RANDOM_H
+#endif
 
-    if (len <= 0) {
-        smsg("mch_get_random: requested %d bytes\n", len);
-        exit(1);
+#if defined(HAVE_SYS_RANDOM_H)
+# define HAVE_GETRANDOM
+# define vim_getrandom(buf, count, flags) \
+    getrandom((buf), (size_t)(count), (unsigned int)(flags))
+#elif defined(__linux__)
+# include <sys/syscall.h>
+# ifdef SYS_getrandom
+#  define HAVE_GETRANDOM
+#  define vim_getrandom(buf, count, flags) \
+    ((ssize_t)syscall(SYS_getrandom, (buf), (size_t)(count), (unsigned int)(flags)))
+# endif
+#endif
+
+#if defined(HAVE_SYS_RANDOM_H) || defined(__APPLE__) || defined(__OpenBSD__) \
+    || defined(__FreeBSD__) || defined(__NetBSD__) \
+    || (defined(__GLIBC__) && (__GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ >= 25)))
+# define HAVE_GETENTROPY
+#endif
+
+/*
+ * Fill the buffer 'buf' with 'len' random bytes.
+ * Tries getrandom() or getentropy() first, falling back to /dev/urandom.
+ * Calls getout(1) if unable to obtain random bytes from any source.
+ * Returns OK for success, FAIL only on invalid arguments (len <= 0).
+ */
+    int
+mch_get_random(char_u *buf, int len)
+{
+    char_u  *p = buf;
+    int     remaining = len;
+    int     fd;
+
+    if (buf == NULL || len <= 0)
+        return len == 0 ? OK : FAIL;
+
+#ifdef HAVE_GETRANDOM
+    static int getrandom_unsupported = FALSE;
+
+    if (!getrandom_unsupported)
+    {
+        while (remaining > 0)
+        {
+            ssize_t n;
+
+            do
+            {
+                n = vim_getrandom(p, remaining, 0);
+            } while (n < 0 && errno == EINTR);
+
+            if (n <= 0)
+            {
+                if (errno == ENOSYS || errno == EINVAL || errno == EOPNOTSUPP
+                        || errno == EPERM || errno == EACCES)
+                    getrandom_unsupported = TRUE;
+                break;
+            }
+
+            p += n;
+            remaining -= (int)n;
+        }
+
+        if (remaining == 0)
+            return OK;
+    }
+#endif
+
+#ifdef HAVE_GETENTROPY
+    static int getentropy_unsupported = FALSE;
+
+    if (!getentropy_unsupported)
+    {
+        while (remaining > 0)
+        {
+            /* getentropy() accepts a maximum of 256 bytes per call */
+            size_t chunk = (size_t)(remaining > 256 ? 256 : remaining);
+
+            if (getentropy(p, chunk) != 0)
+            {
+                if (errno == ENOSYS || errno == EOPNOTSUPP
+                        || errno == EPERM || errno == EACCES)
+                    getentropy_unsupported = TRUE;
+                break;
+            }
+
+            p += chunk;
+            remaining -= (int)chunk;
+        }
+
+        if (remaining == 0)
+            return OK;
+    }
+#endif
+
+    /* Fallback: /dev/urandom */
+    fd = mch_open("/dev/urandom", O_RDONLY | O_EXTRA, 0);
+    if (fd >= 0)
+    {
+        while (remaining > 0)
+        {
+            long n = read_eintr(fd, p, remaining);
+            if (n <= 0)
+                break;
+            p += n;
+            remaining -= (int)n;
+        }
+        close(fd);
+
+        if (remaining == 0)
+            return OK;
     }
 
-   while (len > 0) {
-       do {
-               errno = 0;
-               written = getrandom(p, len, 0);
-       } while ((written == -1) && (errno == EINTR));
-       if (written <= 0) {
-               smsg("mch_get_random: getrandom failed: %s\n",
-                    strerror(errno));
-               exit(1);
-       }
-       p += written;
-       len -= written;
-   }
-   return OK;
+    /* Fatal: unable to obtain required random bytes */
+    getout(1); // does not return, but make compiler happy
+    return FAIL;
 }
 
     int

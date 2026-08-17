@@ -3985,6 +3985,49 @@ vim_fgets(char_u *buf, int size, FILE *fp)
 }
 
 /*
+ * Portable replacement for mkstemp().
+ * Replaces trailing "XXXXXX" in "template" with random characters and opens
+ * the file atomically with O_CREAT | O_EXCL.
+ * Returns the open file descriptor, or -1 on failure.
+ */
+    int
+vim_mkstemp(char *template)
+{
+#if defined(UNIX)
+    return mkstemp(template);
+#else
+    static const char letters[] =
+	"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    char	*x;
+    size_t	len = STRLEN(template);
+    int		i, attempt;
+    int		fd;
+    char_u	rnd[6];
+
+    if (len < 6 || STRCMP(template + len - 6, "XXXXXX") != 0)
+    {
+	errno = EINVAL;
+	return -1;
+    }
+    x = template + len - 6;
+
+    for (attempt = 0; attempt < 100; ++attempt)
+    {
+	mch_get_random(rnd, 6);
+	for (i = 0; i < 6; ++i)
+	    x[i] = letters[rnd[i] % (sizeof(letters) - 1)];
+
+	fd = mch_open(template, O_RDWR | O_CREAT | O_EXCL | O_EXTRA, 0600);
+	if (fd >= 0)
+	    return fd;
+	if (errno != EEXIST)
+	    break;
+    }
+    return -1;
+#endif
+}
+
+/*
  * rename() only works if both files are on the same file system, this
  * function will (attempts to?) copy the file across if rename fails -- webb
  * Return -1 for failure, 0 for success.
@@ -4300,7 +4343,7 @@ copy_file(char_u *from, char_u *to, int silent)
 	goto theend;
     }
 
-    fd_out = mkstemp(tmpfn);
+    fd_out = vim_mkstemp(tmpfn);
     if (fd_out == -1)
     {
 	if (!silent)
@@ -4309,7 +4352,7 @@ copy_file(char_u *from, char_u *to, int silent)
     }
     tmp_created = TRUE;
 
-    // mkstemp() creates the file with mode 0600 (further restricted by the
+    // vim_mkstemp() creates the file with mode 0600 (further restricted by the
     // umask), give the copy the mode of the original.  Note that fchmod()
     // is not subject to the umask, which is what we want here: a copy should
     // be exactly as accessible as the file it was copied from.

@@ -8,6 +8,7 @@ void set_forced_fenc(exarg_T *eap);
 int check_file_readonly(char_u *fname, int perm);
 int vim_fsync(int fd);
 int vim_fsync_dir(char_u *fname);
+int vim_mkstemp(char *template);
 int set_rw_fname(char_u *fname, char_u *sfname);
 void msg_add_fname(buf_T *buf, char_u *fname);
 int msg_add_fileformat(int eol_type);
