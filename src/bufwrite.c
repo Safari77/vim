@@ -1772,21 +1772,20 @@ buf_write(
 
 			    // If we are not going to keep the backup file, don't
 			    // delete an existing one, try to use another name.
-			    // Change one character, just before the extension.
 			    if (!p_bk)
 			    {
-				char_u	*wp;
+				char_u  tempname[MAXPATHL + 1];
+				int     temp_fd;
 
-				wp = backup + STRLEN(backup) - 1
-							     - STRLEN(backup_ext);
-				if (wp < backup)	// empty file name ???
-				    wp = backup;
-				*wp = 'z';
-				while (*wp > 'a'
-					&& mch_stat((char *)backup, &st_new) >= 0)
-				    --*wp;
-				// They all exist??? Must be something wrong.
-				if (*wp == 'a')
+				if (vim_snprintf((char *)tempname, sizeof(tempname),
+						 "%s.XXXXXX", (char *)backup) < (int)sizeof(tempname)
+				    && (temp_fd = vim_mkstemp((char *)tempname)) >= 0)
+				{
+				    close(temp_fd);
+				    vim_free(backup);
+				    backup = vim_strsave(tempname);
+				}
+				else
 				    VIM_CLEAR(backup);
 			    }
 			}
@@ -2006,17 +2005,20 @@ buf_write(
 		    {
 			// If we are not going to keep the backup file, don't
 			// delete an existing one, try to use another name.
-			// Change one character, just before the extension.
 			if (!p_bk && mch_getperm(backup) >= 0)
 			{
-			    p = backup + STRLEN(backup) - 1 - STRLEN(backup_ext);
-			    if (p < backup)	// empty file name ???
-				p = backup;
-			    *p = 'z';
-			    while (*p > 'a' && mch_getperm(backup) >= 0)
-				--*p;
-			    // They all exist??? Must be something wrong!
-			    if (*p == 'a')
+			    char_u  tempname[MAXPATHL + 1];
+			    int     temp_fd;
+
+			    if (vim_snprintf((char *)tempname, sizeof(tempname),
+					     "%s.XXXXXX", (char *)backup) < (int)sizeof(tempname)
+				&& (temp_fd = vim_mkstemp((char *)tempname)) >= 0)
+			    {
+				close(temp_fd);
+				vim_free(backup);
+				backup = vim_strsave(tempname);
+			    }
+			    else
 				VIM_CLEAR(backup);
 			}
 		    }
