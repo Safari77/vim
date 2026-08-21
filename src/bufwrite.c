@@ -1573,7 +1573,11 @@ buf_write(
     // off.  This helps when editing large files on almost-full disks.
     if (!(append && *p_pm == NUL) && !filtering && perm >= 0 && dobackup)
     {
-	if ((bkc & BKC_YES) || append)	// "yes"
+	if ((bkc & BKC_YES) || append	// "yes"
+#if defined(UNIX) || defined(MSWIN)
+		|| (st_old.st_nlink > 1 && !(bkc & BKC_BREAKHARDLINK))
+#endif
+		)
 	    backup_copy = TRUE;
 #if defined(UNIX) || defined(MSWIN)
 	else if ((bkc & BKC_AUTO))	// "auto"
