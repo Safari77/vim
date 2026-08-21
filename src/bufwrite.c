@@ -891,8 +891,6 @@ buf_write(
     int		    dobackup;
     int		    can_write_dir = 0;	// can create a file in the directory
 					// where the target file lives
-    int		    remove_target_first = FALSE; // unlink the target before
-					// writing, so that a new inode is used
     char_u	    *backup_errmsg = NULL; // why no backup could be made; only
 					// reported when no backup was made at all
     int		    backup_errmsg_allocated = FALSE;
@@ -1377,6 +1375,11 @@ buf_write(
         {
             use_temp_rename = FALSE;
         }
+	else if ((bkc & BKC_YES) && !(st_old.st_nlink > 1 && (bkc & BKC_BREAKHARDLINK)))
+	{
+	    // 'backupcopy' is "yes": in-place overwrite requested, do not create temp file.
+	    use_temp_rename = FALSE;
+	}
         else
         {
             stat_T  st_link;
@@ -2059,7 +2062,6 @@ buf_write(
 			    if (perm >= 0)
 				(void)mch_setperm(backup, perm & 0777);
 #endif
-			    remove_target_first = TRUE;
 			    break;
 			}
 
@@ -2301,8 +2303,6 @@ buf_write(
 			if (perm >= 0)
 			    (void)mch_setperm(backup, perm & 0777);
 #endif
-			if (!backup_copy)
-			    remove_target_first = TRUE;
 		    }
 		    else if (!forceit)
 		    {
@@ -2317,12 +2317,6 @@ buf_write(
 			VIM_CLEAR(backup);
 		    }
 		}
-
-		// 'backupcopy' is "no": the file is expected to get a new
-		// inode, so the old one has to go.  Only do this once the
-		// backup really exists.
-		if (remove_target_first && backup_state == BACKUP_READY)
-		    mch_remove(fname);
 	    }
 
 #ifdef HAVE_FTRUNCATE
