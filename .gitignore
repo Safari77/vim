@@ -7,7 +7,6 @@ src/objects
 src/po/big5corr
 src/po/sjiscorr
 src/types.vim
-/.github/
 src/link.cmd
 src/po/*.po
 src/tmp_make
