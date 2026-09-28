@@ -273,6 +273,7 @@ evalvars_init(void)
     set_vim_var_nr(VV_ECHOSPACE,    sc_col - 1);
 
     set_vim_var_dict(VV_COLORNAMES, dict_alloc());
+    set_vim_var_dict(VV_CLIPPROVIDERS, dict_alloc());
 
 #ifdef FEAT_PYTHON3
     set_vim_var_nr(VV_PYTHON3_VERSION, python3_version());
@@ -1990,6 +1991,18 @@ ex_let_one(
 
     if (check_typval_is_value(tv) == FAIL)
 	return NULL;
+
+    // In Vim9 script an environment variable and a register only take a
+    // String.  "@#" also takes a buffer number.
+    if (in_vim9script() && (*arg == '$' || *arg == '@')
+	    && !(*arg == '@' && arg[1] == '#' && tv->v_type == VAR_NUMBER
+					       && (op == NULL || *op == '=')))
+    {
+	where_T	where = WHERE_INIT;
+
+	if (check_typval_type(&t_string, tv, where) == FAIL)
+	    return NULL;
+    }
 
     if (*arg == '$')
     {
@@ -4326,6 +4339,16 @@ set_var_const(
 	}
 
 	// existing variable, need to clear the value
+
+	// In Vim9 script a String v: variable only takes a String.
+	if (ht == &vimvarht && di->di_tv.v_type == VAR_STRING
+							    && in_vim9script())
+	{
+	    where_T	where = WHERE_INIT;
+
+	    if (check_typval_type(&t_string, tv, where) == FAIL)
+		goto failed;
+	}
 
 	// Handle setting internal v: variables separately where needed to
 	// prevent changing the type.
