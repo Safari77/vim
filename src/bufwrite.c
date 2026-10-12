@@ -2736,7 +2736,7 @@ restore_backup:
 	// them from whichever name still holds the previous contents: with a
 	// temporary file the original is still in place, otherwise it was
 	// turned into the backup file.
-	if (!backup_copy)
+	if (!backup_copy && !newfile)
 	{
 	    char_u	*sec_source = NULL;
 
@@ -2758,11 +2758,11 @@ restore_backup:
 #endif
 
 #ifdef UNIX
-	// When creating a new file, set its owner/group to that of the
+	// When replacing an existing file, set its owner/group to that of the
 	// original file.  Get the new device and inode number.
 	// This also applies when writing to a temporary file: it is a new file
 	// too, and it is going to take the place of the original.
-	if ((backup != NULL || newdata == NEW_IN_TMP) && !backup_copy)
+	if (!newfile && (backup != NULL || newdata == NEW_IN_TMP) && !backup_copy)
 	{
 # ifdef HAVE_FCHOWN
 	    // Don't change the owner when it's already OK, some systems remove
@@ -2780,7 +2780,7 @@ restore_backup:
 # endif
 	    buf_setino(buf);
 	}
-	else if (!buf->b_dev_valid)
+	else if (!buf->b_dev_valid && newdata != NEW_IN_TMP)
 	    // Set the inode when creating a new file.
 	    buf_setino(buf);
 #endif
