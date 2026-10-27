@@ -214,6 +214,20 @@ func Test_tuple_indexing()
   call v9.CheckSourceDefAndScriptSuccess(lines)
 endfunc
 
+" Test for the type of an item from indexing a tuple literal with one item
+def Test_tuple_single_item_index_type()
+  v9.CheckSourceDefFailure(['var s: string = (1,)[0]'],
+    'E1012: Type mismatch; expected string but got number', 1)
+
+  var lines =<< trim END
+    var n: number = (1,)[0]
+    assert_equal(1, n)
+    var l: list<number> = ([1, 2],)[0]
+    assert_equal([1, 2], l)
+  END
+  v9.CheckSourceDefAndScriptSuccess(lines)
+enddef
+
 " Indexing a tuple in a Dict
 func Test_tuple_in_a_dict_index()
   let lines =<< trim END
@@ -787,6 +801,20 @@ func Test_multi_assign_from_tuple()
   call v9.CheckSourceFailure(lines, 'E1093: Expected 2 items but got 0')
 endfunc
 
+" Test for the value of the variable after ";" when unpacking a tuple in a
+" :for loop.  It must be a tuple, also in a compiled function.
+def Test_tuple_for_unpack_rest_is_tuple()
+  var lines =<< trim END
+    var r = []
+    for [a; b] in ((1, 2, 3), (4,))
+      assert_equal(v:t_tuple, type(b))
+      r->add(b)
+    endfor
+    assert_equal([(2, 3), ()], r)
+  END
+  v9.CheckSourceDefAndScriptSuccess(lines)
+enddef
+
 " Test for performing an arithmetic operation on multiple variables using
 " items from a tuple
 func Test_multi_arithmetic_op_from_tuple()
@@ -1107,6 +1135,39 @@ func Test_tuple_type_check()
   END
   call v9.CheckSourceFailure(lines, 'E1012: Type mismatch; expected tuple<number, ...list<string>> but got tuple<number, ...list<bool>>')
 endfunc
+
+" Test for using a tuple with fewer items than required by a variadic tuple
+" type
+def Test_tuple_variadic_min_items()
+  var lines =<< trim END
+    var t: tuple<number, string, ...list<number>> = (1,)
+  END
+  v9.CheckSourceDefAndScriptFailure(lines, 'E1012: Type mismatch; expected tuple<number, string, ...list<number>> but got tuple<number>')
+
+  lines =<< trim END
+    var x: tuple<number> = (1,)
+    var t: tuple<number, string, ...list<number>> = x
+  END
+  v9.CheckSourceDefAndScriptFailure(lines, 'E1012: Type mismatch; expected tuple<number, string, ...list<number>> but got tuple<number>')
+
+  lines =<< trim END
+    vim9script
+    def Fn(t: tuple<number, string, ...list<number>>)
+    enddef
+    var x: any = (1,)
+    Fn(x)
+  END
+  v9.CheckSourceFailure(lines, 'E1013: Argument 1: type mismatch, expected tuple<number, string, ...list<number>> but got tuple<number>', 5)
+
+  lines =<< trim END
+    var t1: tuple<number, string, ...list<number>> = (1, 'a')
+    var t2: tuple<number, string, ...list<number>> = (1, 'a', 2, 3)
+    var t3: tuple<number, ...list<string>> = (1,)
+    var t4: tuple<number, string, ...list<number>> = ()
+    assert_equal((1, 'a', 2, 3), t2)
+  END
+  v9.CheckSourceDefAndScriptSuccess(lines)
+enddef
 
 " Test for setting the type of a script variable to tuple
 func Test_tuple_scriptvar_type()
@@ -2554,6 +2615,25 @@ func Test_tuple_string()
     VAR t = (l,)
     call add(l, t)
     call assert_equal('([(...)], )', string(t))
+  END
+  call v9.CheckSourceLegacyAndVim9Success(lines)
+endfunc
+
+" Test for using a tuple with :echomsg and :echoerr
+func Test_tuple_echomsg()
+  CheckNotMSWindows
+  let lines =<< trim END
+    VAR t = (1, 'a')
+    messages clear
+    echomsg t
+    call assert_equal("(1, 'a')", execute(':1messages')->trim())
+    echomsg 'x' (2,) () test_null_tuple()
+    call assert_equal("x (2, ) () ()", execute(':1messages')->trim())
+    try
+      echoerr t
+    catch
+      call assert_match("(1, 'a')$", v:exception)
+    endtry
   END
   call v9.CheckSourceLegacyAndVim9Success(lines)
 endfunc
