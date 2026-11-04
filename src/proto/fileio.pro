@@ -7,6 +7,7 @@ void set_file_options(int set_options, exarg_T *eap);
 void set_forced_fenc(exarg_T *eap);
 int check_file_readonly(char_u *fname, int perm);
 int vim_fsync(int fd);
+int vim_fsync_close(int fd);
 int vim_fsync_dir(char_u *fname);
 int vim_mkstemp(char *template);
 int set_rw_fname(char_u *fname, char_u *sfname);

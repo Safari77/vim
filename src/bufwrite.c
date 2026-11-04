@@ -1884,9 +1884,6 @@ buf_write(
 
 			    if (write_info.bw_len < 0)
 				errmsg = (char_u *)_(e_cant_read_file_for_backup_add_bang_to_write_anyway);
-#ifdef UNIX
-			    set_file_time(backupfn, st_old.st_atime, st_old.st_mtime);
-#endif
 #ifdef HAVE_ACL
 			    mch_set_acl(backupfn, acl);
 #endif
@@ -1899,13 +1896,11 @@ buf_write(
 #ifdef MSWIN
 			    (void)mch_copy_file_attribute(fname, backupfn);
 #endif
-			    if (vim_fsync(bfd) < 0 && errmsg == NULL)
-				set_errmsg_str(&errmsg, &errmsg_allocated,
-					_("E999: Error syncing backup file \"%s\" to disk"),
-					backup);
-			    if (close(bfd) < 0 && errmsg == NULL)
+			    if (vim_fsync_close(bfd) < 0 && errmsg == NULL)
 				errmsg = (char_u *)_(e_close_error_for_backup_file_add_bang_to_write_anyway);
-
+#ifdef UNIX
+			    set_file_time(backupfn, st_old.st_atime, st_old.st_mtime);
+#endif
 			    // Put the backup in place.  Use vim_rename() so that a
 			    // backup directory on another file system also works, and
 			    // so that the name is handled the same way as everywhere
@@ -2008,14 +2003,15 @@ buf_write(
 			// delete an existing one, try to use another name.
 			if (!p_bk && mch_getperm(backup) >= 0)
 			{
-			    char_u  tempname[MAXPATHL + 1];
-			    int     temp_fd;
+			    char_u tempname[MAXPATHL + 1];
+			    int temp_fd;
 
 			    if (vim_snprintf((char *)tempname, sizeof(tempname),
-					     "%s.XXXXXX", (char *)backup) < (int)sizeof(tempname)
-				&& (temp_fd = vim_mkstemp((char *)tempname)) >= 0)
+					"%s.XXXXXX", (char *)backup) < (int)sizeof(tempname)
+				    && (temp_fd = vim_mkstemp((char *)tempname)) >= 0)
 			    {
 				close(temp_fd);
+				mch_remove(tempname);
 				vim_free(backup);
 				backup = vim_strsave(tempname);
 			    }
@@ -2694,10 +2690,14 @@ restore_backup:
 	    nchars += len;
 	}
 
-	if (!buf->b_p_fixeol && buf->b_p_eof)
+	if (end > 0 && !buf->b_p_fixeol && buf->b_p_eof)
 	{
 	    // write trailing CTRL-Z
-	    (void)write_eintr(write_info.bw_fd, "\x1a", 1);
+	    if (!checking_conversion)
+	    {
+		if (write_eintr(write_info.bw_fd, "\x1a", 1) != 1)
+		    end = 0;
+	    }
 	    nchars++;
 	}
 
@@ -2713,23 +2713,6 @@ restore_backup:
     // encountered.
     if (!checking_conversion)
     {
-#if defined(UNIX) && defined(HAVE_FSYNC)
-	// On many journaling file systems there is a bug that causes both the
-	// original and the backup file to be lost when halting the system
-	// right after writing the file.  That's because only the meta-data is
-	// journalled.  Syncing the file slows down the system, but assures it
-	// has been written to disk and we don't lose it.
-	// For a device do try the fsync() but don't complain if it does not
-	// work (could be a pipe).
-	// If the 'fsync' option is FALSE, don't fsync().  Useful for laptops.
-	if ((buf->b_p_fs >= 0 ? buf->b_p_fs : p_fs) && vim_fsync(fd) != 0
-		&& !device)
-	{
-	    errmsg = (char_u *)_(e_fsync_failed);
-	    end = 0;
-	}
-#endif
-
 #if defined(HAVE_SELINUX) || defined(HAVE_SMACK) || defined(FEAT_XATTR)
 	// The file was created from scratch, so it does not have the security
 	// context and the extended attributes of the file it replaces.  Copy
@@ -2794,7 +2777,16 @@ restore_backup:
 	if (perm >= 0)
 	    (void)mch_fsetperm(fd, perm);
 #endif
-	if (close(fd) != 0)
+
+	if ((buf->b_p_fs >= 0 ? buf->b_p_fs : p_fs) && !device)
+	{
+	    if (vim_fsync_close(fd) != 0)
+	    {
+		errmsg = (char_u *)_(e_fsync_failed);
+		end = 0;
+	    }
+	}
+	else if (close(fd) != 0 && errno != EINTR)
 	{
 	    errmsg = (char_u *)_(e_close_failed);
 	    end = 0;
@@ -3039,15 +3031,15 @@ restore_backup:
 			write_info.bw_buf = buffer;
 			write_info.bw_flags = FIO_NOCONVERT;
 			while ((write_info.bw_len = read_eintr(fd, buffer,
-						      WRITEBUFSIZE)) > 0) {
+						      WRITEBUFSIZE)) > 0)
+			{
 			    if (buf_write_bytes(&write_info) == FAIL)
 				break;
 			}
 
-			if ((vim_fsync(write_info.bw_fd) == 0)
-			    && (close(write_info.bw_fd) >= 0)
-			    && write_info.bw_len == 0)
-				end = 1;		// success
+			if (vim_fsync_close(write_info.bw_fd) == 0
+				&& write_info.bw_len == 0)
+			    end = 1;	    // success
 		    }
 		    close(fd);	// ignore errors for closing read file
 		}

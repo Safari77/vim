@@ -3145,7 +3145,6 @@ check_file_readonly(
 	);
 }
 
-#if defined(HAVE_FSYNC)
 /*
  * Call fsync() with Mac-specific exception.
  *
@@ -3160,8 +3159,9 @@ check_file_readonly(
  * Return zero for success.  On failure "errno" is left set for the caller.
  */
     int
-vim_fsync(int fd)
+vim_fsync(int fd UNUSED)
 {
+#if defined(HAVE_FSYNC)
     int		r;
     int		err;
 
@@ -3210,8 +3210,42 @@ vim_fsync(int fd)
 
     errno = err;
     return -1;
-}
+#else
+    return 0;
 #endif
+}
+
+/*
+ * Sync "fd" to disk and close it.
+ *
+ * Always closes "fd", even when syncing fails.  On Linux (and POSIX.1-2008)
+ * close() leaves the file descriptor closed even when it returns -1 with
+ * errno == EINTR, so EINTR from close() is not an error condition.
+ *
+ * Return zero for success, -1 for failure with "errno" set to the first error.
+ */
+    int
+vim_fsync_close(int fd)
+{
+    int		sync_res;
+    int		sync_err = 0;
+    int		close_res;
+
+    sync_res = vim_fsync(fd);
+    if (sync_res != 0)
+	sync_err = errno;
+
+    close_res = close(fd);
+    if (close_res < 0 && errno == EINTR)
+	close_res = 0;
+
+    if (sync_res != 0)
+    {
+	errno = sync_err;
+	return -1;
+    }
+    return close_res;
+}
 
 #if defined(UNIX) || defined(PROTO)
 /*
@@ -3233,7 +3267,6 @@ vim_fsync_dir(char_u *fname)
     char_u	*tail;
     size_t	len;
     int		fd;
-    int		r;
 
     tail = gettail(fname);
     len = (size_t)(tail - fname);
@@ -3259,9 +3292,7 @@ vim_fsync_dir(char_u *fname)
 	    , 0);
     if (fd < 0)
 	return -1;
-    r = vim_fsync(fd);
-    close(fd);
-    return r;
+    return vim_fsync_close(fd);
 # else
     return 0;
 # endif
@@ -4352,6 +4383,7 @@ copy_file(char_u *from, char_u *to, int silent)
     }
     tmp_created = TRUE;
 
+#ifdef HAVE_FCHMOD
     // vim_mkstemp() creates the file with mode 0600 (further restricted by the
     // umask), give the copy the mode of the original.  Note that fchmod()
     // is not subject to the umask, which is what we want here: a copy should
@@ -4364,6 +4396,22 @@ copy_file(char_u *from, char_u *to, int silent)
 	    semsg(_("E999: Cannot set permissions of \"%s\""), to);
 	goto theend;
     }
+#endif
+
+#ifdef HAVE_FCHMOD
+    // vim_mkstemp() creates the file with mode 0600 (further restricted by the
+    // umask), give the copy the mode of the original.  Note that fchmod()
+    // is not subject to the umask, which is what we want here: a copy should
+    // be exactly as accessible as the file it was copied from.
+    // Skip this when the mode could not be obtained, chmod'ing with -1 would
+    // set every bit including setuid, setgid and sticky.
+    if (perm >= 0 && fchmod(fd_out, (mode_t)(perm & 07777)) != 0)
+    {
+	if (!silent)
+	    semsg(_("E999: Cannot set permissions of \"%s\""), to);
+	goto theend;
+    }
+#endif
 
     if (copy_file_contents(fd_in, fd_out) == FAIL)
     {
@@ -4372,8 +4420,9 @@ copy_file(char_u *from, char_u *to, int silent)
 	goto theend;
     }
 
-#ifndef UNIX	    // for Unix fchmod() above already set the permission
-    mch_setperm((char_u *)tmpfn, perm);
+#ifndef HAVE_FCHMOD	// when fchmod() is available it already set the permission
+    if (perm >= 0)
+	mch_setperm((char_u *)tmpfn, perm);
 #endif
 #ifdef HAVE_ACL
     mch_set_acl((char_u *)tmpfn, acl);
@@ -4385,17 +4434,11 @@ copy_file(char_u *from, char_u *to, int silent)
     mch_copy_xattr(from, (char_u *)tmpfn);
 #endif
 
-    if (vim_fsync(fd_out) != 0)
-    {
-	if (!silent)
-	    semsg(_("E999: Error syncing \"%s\" to disk"), to);
-	goto theend;
-    }
-    if (close(fd_out) < 0)
+    if (vim_fsync_close(fd_out) != 0)
     {
 	fd_out = -1;		// already closed, do not close it again
 	if (!silent)
-	    semsg(_(e_error_closing_str), to);
+	    semsg(_(e_error_writing_to_str), to);
 	goto theend;
     }
     fd_out = -1;
